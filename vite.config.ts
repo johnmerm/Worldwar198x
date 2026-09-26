@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { cpSync, existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, rmSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
@@ -11,31 +11,26 @@ const CESIUM_VERSION: string = JSON.parse(readFileSync('node_modules/cesium/pack
 const cesiumSource = 'node_modules/cesium/Build/Cesium';
 const cesiumDirs = ['Workers', 'ThirdParty', 'Assets', 'Widgets'];
 const SITE = 'site';
-const CESIUM_SHARED = `cesium-${CESIUM_VERSION}`;
+// Production builds load Cesium from its official CDN (the one Cesium's own
+// quickstart uses). CESIUM_CDN overrides it, e.g. for local testing.
+const [major, minor] = CESIUM_VERSION.split('.');
+const CESIUM_CDN =
+  process.env.CESIUM_CDN ?? `https://cesium.com/downloads/cesiumjs/releases/${major}.${minor}/Build/Cesium/`;
 
 /**
- * Production layout for static hosting (githack / GitHub raw):
- *   site/cesium-<version>/  prebuilt Cesium, shared by all builds, copied once
- *   site/b<N>/              this build's page and bundle (older b* folders removed)
- * The app bundle treats `cesium` as the global loaded from the shared copy,
- * so each build is tens of kB instead of megabytes.
+ * Production layout for static hosting (githack / GitHub raw): site/b<N>/
+ * holds this build's page and bundle; older b* folders are removed. The app
+ * bundle treats `cesium` as the global loaded from the CDN, so each build is
+ * tens of kB.
  */
 function publishLayout(): Plugin {
   return {
     name: 'ww198x-publish-layout',
     apply: 'build',
-    transformIndexHtml: () => [
-      { tag: 'script', attrs: { src: `../${CESIUM_SHARED}/Cesium.js` }, injectTo: 'head' },
-    ],
+    transformIndexHtml: () => [{ tag: 'script', attrs: { src: `${CESIUM_CDN}Cesium.js` }, injectTo: 'head' }],
     closeBundle() {
-      const shared = `${SITE}/${CESIUM_SHARED}`;
-      if (!existsSync(shared)) {
-        cpSync(`${cesiumSource}/Cesium.js`, `${shared}/Cesium.js`);
-        for (const dir of cesiumDirs) cpSync(`${cesiumSource}/${dir}`, `${shared}/${dir}`, { recursive: true });
-      }
       for (const entry of readdirSync(SITE)) {
-        const stale = (/^b\d+$/.test(entry) && entry !== `b${BUILD}`) || (entry.startsWith('cesium-') && entry !== CESIUM_SHARED);
-        if (stale) rmSync(`${SITE}/${entry}`, { recursive: true });
+        if (/^b\d+$/.test(entry) && entry !== `b${BUILD}`) rmSync(`${SITE}/${entry}`, { recursive: true });
       }
     },
   };
@@ -45,7 +40,7 @@ export default defineConfig(({ command }) => ({
   base: './',
   define: {
     __BUILD__: JSON.stringify(BUILD),
-    __CESIUM_BASE_URL__: JSON.stringify(command === 'build' ? `../${CESIUM_SHARED}/` : '/cesium/'),
+    __CESIUM_BASE_URL__: JSON.stringify(command === 'build' ? CESIUM_CDN : '/cesium/'),
   },
   plugins: [
     // Dev server only: serve Cesium's workers and assets at /cesium/.

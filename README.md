@@ -10,7 +10,7 @@ side, a silo field and up to one target per re-entry vehicle, let the
 fire-control computer solve the trajectories, and watch the booster, the
 MIRV bus and each warhead fly on a CesiumJS globe.
 
-<!-- play-link -->**[▶ Play build 1](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b1/index.html)**<!-- /play-link -->
+<!-- play-link -->**[▶ Play build 2](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b2/index.html)**<!-- /play-link -->
 
 ## Running
 
@@ -29,7 +29,7 @@ must carry a new build number, because githack caches aggressively:
 1. `npm run release` bumps `build.json` and builds into `site/b<N>/`. It deletes the previous build folder and updates the play link above.
 2. Commit everything, including `site/`, and push.
 
-The shared Cesium library lives in `site/cesium-<version>/` and is copied only once.
+Published builds load Cesium from its official CDN (`cesium.com/downloads/cesiumjs/releases/<version>/`), matching the version in `package.json`. Each build is only the game itself, about 70 KB. Set `CESIUM_CDN=<url>` when building to use a different host.
 
 No Cesium ion token is needed. The globe uses the Natural Earth II imagery
 that ships with Cesium.
