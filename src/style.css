@@ -335,3 +335,21 @@ dd.hot {
 #rvTable td.ok {
   color: var(--fg);
 }
+
+/* Sensor picture */
+.log li.sensor {
+  color: #5fd7ff;
+}
+.legend {
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+}
+.legend span::before {
+  content: '●';
+  color: var(--c);
+  margin-right: 3px;
+}
+#pictureSeg {
+  margin-bottom: 4px;
+}

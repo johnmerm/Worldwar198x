@@ -28,12 +28,47 @@ export interface BusSpec {
   releaseInterval: number;
 }
 
+/**
+ * Penetration aids released with each RV. Decoys are light replicas that fly
+ * exactly like RVs in vacuum; chaff is a cloud of dipoles that hides whatever
+ * is inside it from radar. The atmosphere strips both before the RVs land.
+ */
+export interface PenaidSpec {
+  decoysPerRv: number;
+  /** Decoy ballistic coefficient [kg/m^2]; far lower than an RV's */
+  decoyBeta: number;
+  chaffPerRv: number;
+  /** Chaff cloud ballistic coefficient [kg/m^2]; dipoles are stripped very high */
+  chaffBeta: number;
+  /** Chaff cloud radius growth [m/s] */
+  chaffExpansion: number;
+  /** Separation speed pushing decoys away from their RV [m/s] */
+  separation: number;
+}
+
+/** Radar cross-sections [m^2], broadside-averaged, for early-warning radar ranges. */
+export interface RcsSpec {
+  booster: number;
+  /** Spent final stage tumbling through midcourse */
+  stage: number;
+  bus: number;
+  rv: number;
+  /** Decoys are built to match the RV's radar return */
+  decoy: number;
+  /** A fully bloomed chaff cloud */
+  chaff: number;
+}
+
 export interface MissileSpec {
   id: string;
   name: string;
   side: 'USA' | 'USSR';
   stages: Stage[];
   bus: BusSpec;
+  penaids: PenaidSpec;
+  rcs: RcsSpec;
+  /** Spent final-stage ballistic coefficient [kg/m^2] */
+  stageBeta: number;
   /** Booster drag area Cd*A [m^2] */
   cdA: number;
   /** Re-entry vehicle ballistic coefficient m/(Cd*A) [kg/m^2]; slender RVs keep more speed */
@@ -69,6 +104,9 @@ export const MINUTEMAN_III: MissileSpec = {
   ],
   // Mk12A bus: 3 RVs, PSRE bipropellant engine.
   bus: { rvCount: 3, rvMass: 180, dry: 250, propellant: 110, isp: 235, firstRelease: 30, releaseInterval: 40 },
+  penaids: { decoysPerRv: 2, decoyBeta: 300, chaffPerRv: 1, chaffBeta: 1, chaffExpansion: 5, separation: 2 },
+  rcs: { booster: 10, stage: 3, bus: 1, rv: 0.05, decoy: 0.05, chaff: 200 },
+  stageBeta: 150,
   cdA: 0.55,
   rvBeta: 12000,
   verticalRise: 8,
@@ -92,6 +130,9 @@ export const R36M: MissileSpec = {
   ],
   // Mod 4 bus: 10 RVs on a large liquid-fuelled bus.
   bus: { rvCount: 10, rvMass: 450, dry: 2000, propellant: 1500, isp: 300, firstRelease: 30, releaseInterval: 25 },
+  penaids: { decoysPerRv: 1, decoyBeta: 400, chaffPerRv: 1, chaffBeta: 1, chaffExpansion: 5, separation: 2 },
+  rcs: { booster: 40, stage: 15, bus: 5, rv: 0.1, decoy: 0.1, chaff: 300 },
+  stageBeta: 150,
   cdA: 2.4,
   rvBeta: 9000,
   verticalRise: 10,

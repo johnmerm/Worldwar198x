@@ -1,7 +1,8 @@
 # World War 198X
 
 Browser ICBM strategy game: Vite + TypeScript + CesiumJS. Physics lives in
-`src/physics/` (renderer-independent, unit-tested); the Cesium UI is `src/main.ts`.
+`src/physics/`, early-warning satellites and radars in `src/sensors/` (both
+renderer-independent and unit-tested); the Cesium UI is `src/main.ts`.
 
 ## Checks
 

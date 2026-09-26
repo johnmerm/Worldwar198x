@@ -10,7 +10,7 @@ side, a silo field and up to one target per re-entry vehicle, let the
 fire-control computer solve the trajectories, and watch the booster, the
 MIRV bus and each warhead fly on a CesiumJS globe.
 
-<!-- play-link -->**[▶ Play build 2](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b2/index.html)**<!-- /play-link -->
+<!-- play-link -->**[▶ Play build 3](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b3/index.html)**<!-- /play-link -->
 
 ## Running
 
@@ -110,12 +110,41 @@ turning the whole trajectory plane. From Wisconsin, a Minuteman III aimed at Mos
 | Flight time | ~27.8 min |
 | J2/drag aim correction | ~13 km |
 
+## Penetration aids and early warning (`src/sensors`)
+
+Each RV leaves the bus with **decoys** and a **chaff** cloud:
+
+- **Decoys** are light replicas with the same radar cross-section. In vacuum they fall exactly like the RV, so radar cannot tell them apart.
+- **Chaff** is a cloud of dipoles that expands at about 5 m/s. Radar can't see the RV and decoys inside it, only a big blob of clutter.
+- The **atmosphere strips them**:
+  - chaff disperses at about 90 km (dynamic pressure above 50 Pa);
+  - decoys tear apart at about 60 km (above 5 kPa);
+  - the spent final stage breaks up at about 50 km.
+
+The defender's sensors, evaluated over the whole flight:
+
+| Sensor | Model |
+|---|---|
+| **DSP** (US), 3 geostationary IR satellites | Sees the booster plume above 12 km, looking down against the Earth. Needs two looks 10 s apart. |
+| **Oko** (USSR), 9 satellites in 12-hour Molniya orbits | Apogees repeat over 24°W and 156°E. Early IR sensors could only see a plume **against the black of space**, so they detect late in boost, and some times of day are gaps. |
+| **Radars**: BMEWS, PAVE PAWS and Cavalier PARCS (US); Dnepr, Daryal and Don-2N (USSR) | Line-of-sight horizon (2–3° minimum elevation), a coverage sector, and range scaling as RCS^¼: the stage (3 m²) is seen much farther than an RV (0.05 m²). |
+
+**Discrimination.** The defender can't classify RV-sized objects in midcourse. They show as UNKNOWN until a radar tracks them below 80 km, where drag sorts heavy RVs from light decoys.
+
+Against the Wisconsin → Moscow strike:
+
+1. **Oko** reports the launch 45–180 s into boost, depending on the time of day.
+2. **Olenegorsk** sees the chaff clouds 13 minutes in.
+3. The RVs stay hidden inside the chaff until it disperses. **Moscow's Don-2N** then identifies each RV and decoy about 30–40 s before impact.
+
+In the game, **Display → Enemy sensors** shows only what the other side holds and how it classifies each object. **Sensor coverage** draws the radar fans and the satellites.
+
 ## Roadmap
 
 - [x] WGS-84 Earth, ICBM boost / midcourse / re-entry, fire control, globe UI
-- [ ] Early warning: DSP / Oko infrared satellites (boost detection), BMEWS and Dnestr/Daryal radars (horizon-limited tracking)
+- [x] Early warning: DSP / Oko infrared satellites (boost detection), BMEWS and Dnepr/Daryal radars (horizon-limited tracking)
 - [x] MIRV post-boost bus with Δv-limited footprint
-- [ ] Penetration aids (decoys, chaff) for radars to discriminate
+- [x] Penetration aids (decoys, chaff) and radar discrimination
 - [ ] SDI interceptor satellites (orbital mechanics, engagement windows)
 - [ ] Soviet co-orbital ASAT ("Istrebitel Sputnikov") vs US satellites
 - [ ] Two-player turn/real-time modes

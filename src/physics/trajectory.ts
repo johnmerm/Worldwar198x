@@ -51,12 +51,32 @@ export interface RvResult {
   impact: { t: number; ecef: Vec3; geo: Geodetic; speed: number } | null;
 }
 
+export type PenaidKind = 'stage' | 'decoy' | 'chaff';
+
+/** A non-RV object on a ballistic path: spent stage, decoy or chaff cloud. */
+export interface BallisticObject {
+  /** e.g. 'STAGE', 'DCY-A1', 'CHF-A' */
+  id: string;
+  kind: PenaidKind;
+  /** RV this penaid was released with */
+  rv?: number;
+  /** Ballistic coefficient [kg/m^2] */
+  beta: number;
+  samples: TrajectorySample[];
+  /** How the object's flight ended: hit the ground or broke up / dispersed in the air */
+  end: { t: number; reason: 'impact' | 'breakup'; alt: number } | null;
+  /** Chaff cloud radius [m] = r0 + rate * (t - release time) */
+  chaff?: { r0: number; rate: number };
+}
+
 export interface SimResult {
   /** Launch to booster burnout */
   booster: TrajectorySample[];
   /** Post-boost vehicle, burnout to last RV release */
   bus: TrajectorySample[];
   rvs: RvResult[];
+  /** Spent stage, decoys and chaff (penaids only when `SimOptions.penaids`) */
+  objects: BallisticObject[];
   events: FlightEvent[];
   /** Booster guidance achieved the required velocity before propellant ran out */
   feasible: boolean;
@@ -80,6 +100,8 @@ export interface SimOptions {
    * always serving the target that costs the least delta-v next.
    */
   releaseOrder?: number[];
+  /** Release decoys and chaff with each RV (skipped by the fire-control solver for speed) */
+  penaids?: boolean;
 }
 
 interface State {
@@ -284,6 +306,47 @@ function flyRv(start: State, beta: number, maxT: number, rv: RvResult, events: F
   rv.apogee = apogee;
 }
 
+/**
+ * Ballistic flight of a stage, decoy or chaff cloud. It ends on impact, or
+ * when dynamic pressure exceeds `breakupQ` [Pa]: balloons tear, casings
+ * break up and chaff disperses. In vacuum it moves exactly like an RV.
+ */
+function flyObject(start: State, beta: number, maxT: number, breakupQ: number, obj: BallisticObject) {
+  const s: State = { t: start.t, r: start.r, v: start.v };
+  obj.samples.push(sampleOf(s, 'midcourse'));
+  let pastApogee = false;
+  let prevAlt = altitude(s.r);
+  while (s.t < maxT) {
+    const dt = prevAlt > 150_000 ? COAST_DT : REENTRY_DT;
+    [s.r, s.v] = rk4(s.r, s.v, dt, beta, [0, 0, 0]);
+    s.t += dt;
+    const alt = altitude(s.r);
+    if (alt < prevAlt) pastApogee = true;
+    prevAlt = alt;
+    const phase: FlightPhase = pastApogee && alt < REENTRY_ALT ? 'terminal' : 'midcourse';
+    obj.samples.push(sampleOf(s, phase));
+    if (alt <= 0) {
+      obj.end = { t: s.t, reason: 'impact', alt: 0 };
+      return;
+    }
+    const vRel = sub(s.v, earthRotationVelocity(s.r));
+    if (0.5 * airDensity(alt) * dot(vRel, vRel) > breakupQ) {
+      obj.end = { t: s.t, reason: 'breakup', alt };
+      return;
+    }
+  }
+}
+
+/** Breakup dynamic pressures [Pa]. */
+const Q_CHAFF = 50; // dipoles scattered almost as soon as the air thickens (~95 km)
+const Q_DECOY = 5_000; // light balloons / replicas (~60 km)
+const Q_STAGE = 20_000; // empty motor casing
+
+/** Random unit vector. */
+function randomDir(rng: () => number): Vec3 {
+  return unit([gaussian(rng), gaussian(rng), gaussian(rng)]);
+}
+
 /** Bus delta-v needed to move from `s` onto a path hitting `aimEcef` at time T. */
 function busDvFor(s: State, aimEcef: Vec3, T: number): { dv: number; v: Vec3 } | null {
   const sol = lambert(s.r, ecefToEci(aimEcef, T), T - s.t);
@@ -371,9 +434,14 @@ export function simulate(
   let busDvUsed = 0;
   const releaseOrder: number[] = [];
 
+  const objects: BallisticObject[] = [];
   if (boost.feasible) {
     bus.push(sampleOf(s, 'bus'));
     const rng = opts.rng ?? Math.random;
+    // The spent final stage backs away from the bus and tumbles along behind it.
+    const stage: BallisticObject = { id: 'STAGE', kind: 'stage', beta: spec.stageBeta, samples: [], end: null };
+    flyObject({ t: s.t, r: s.r, v: addScaled(s.v, unit(s.v), -3) }, spec.stageBeta, plannedTof * 2 + 900, Q_STAGE, stage);
+    objects.push(stage);
     const sigma = opts.guidanceSigma ?? 0;
     const maxT = plannedTof * 2 + 900;
     const remaining = aimEcefs.map((_, i) => i).filter((i) => i !== 0);
@@ -414,6 +482,31 @@ export function simulate(
         rv: k,
       });
       flyRv({ t: s.t, r: s.r, v }, spec.rvBeta, maxT, rv, events);
+
+      if (opts.penaids) {
+        const p = spec.penaids;
+        const L = String.fromCharCode(65 + k);
+        for (let d = 0; d < p.decoysPerRv; d++) {
+          const decoy: BallisticObject = { id: `DCY-${L}${d + 1}`, kind: 'decoy', rv: k, beta: p.decoyBeta, samples: [], end: null };
+          const dv = scale(randomDir(rng), p.separation * (0.5 + 0.5 * rng()));
+          flyObject({ t: s.t, r: s.r, v: add(v, dv) }, p.decoyBeta, maxT, Q_DECOY, decoy);
+          objects.push(decoy);
+        }
+        for (let c = 0; c < p.chaffPerRv; c++) {
+          const id = p.chaffPerRv > 1 ? `CHF-${L}${c + 1}` : `CHF-${L}`;
+          const cloud: BallisticObject = {
+            id,
+            kind: 'chaff',
+            rv: k,
+            beta: p.chaffBeta,
+            samples: [],
+            end: null,
+            chaff: { r0: 50, rate: p.chaffExpansion },
+          };
+          flyObject({ t: s.t, r: s.r, v: add(v, scale(randomDir(rng), 0.2)) }, p.chaffBeta, maxT, Q_CHAFF, cloud);
+          objects.push(cloud);
+        }
+      }
     }
   }
 
@@ -422,6 +515,7 @@ export function simulate(
     booster,
     bus,
     rvs,
+    objects,
     events,
     feasible: boost.feasible,
     residualVgo: boost.residualVgo,

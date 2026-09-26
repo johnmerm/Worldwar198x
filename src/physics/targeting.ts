@@ -166,6 +166,7 @@ export function flySolution(sol: FiringSolution, rng: () => number = Math.random
   const aims = sol.targets.map((t) => t.aimEcef);
   return simulate(sol.spec, launchEcef, aims, sol.plannedTof, {
     releaseOrder: fixedOrder(sol.nominal),
+    penaids: true,
     guidanceSigma: sol.spec.guidanceSigma,
     rng,
   });

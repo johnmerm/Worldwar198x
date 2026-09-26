@@ -20,6 +20,19 @@ import {
   vincentyInverse,
 } from './physics';
 import { LAUNCH_SITES, type Side, TARGETS } from './game/sites';
+import {
+  type ObjectKind,
+  RADARS,
+  SATELLITES,
+  type SensorReport,
+  type TrackClass,
+  type TrackedObject,
+  chaffRadius,
+  evaluateSensors,
+  radarRange,
+  satelliteEcef,
+  trackClassAt,
+} from './sensors';
 
 // ---------------------------------------------------------------------------
 // Globe
@@ -110,7 +123,7 @@ function renderDl(el: HTMLElement, rows: [string, string, string?][]) {
     .join('');
 }
 
-function log(text: string, kind: '' | 'alert' | 'notice' = '') {
+function log(text: string, kind: '' | 'alert' | 'notice' | 'sensor' = '') {
   const li = document.createElement('li');
   if (kind) li.className = kind;
   const now = Cesium.JulianDate.toGregorianDate(viewer.clock.currentTime);
@@ -134,7 +147,7 @@ const CUSTOM = '__custom__';
 
 const launchMarker = viewer.entities.add({
   point: { pixelSize: 9, color: GREEN, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 },
-  label: { font: FONT, fillColor: GREEN, pixelOffset: new Cesium.Cartesian2(0, -18), showBackground: true },
+  label: { font: FONT, fillColor: GREEN, pixelOffset: new Cesium.Cartesian2(0, -18), showBackground: true, disableDepthTestDistance: Number.POSITIVE_INFINITY },
 });
 
 /** Entities that belong to the current mission plan (target markers, predicted tracks). */
@@ -164,6 +177,7 @@ function drawTargets() {
         fillColor: RED,
         pixelOffset: new Cesium.Cartesian2(0, -18),
         showBackground: true,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     });
   });
@@ -217,24 +231,7 @@ function fillLaunchSelect() {
 
 function applySide(newSide: Side) {
   side = newSide;
-  /** Fly to a point set, framed with at least `minRadius` metres around it. */
-function frame(points: GeoPoint[], minRadius: number) {
-  const sphere = Cesium.BoundingSphere.fromPoints(points.map((p) => Cesium.Cartesian3.fromDegrees(p.lon, p.lat)));
-  sphere.radius = Math.max(sphere.radius, minRadius);
-  viewer.camera.flyToBoundingSphere(sphere, {
-    duration: 1.5,
-    offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-60), sphere.radius * 4),
-  });
-}
-document.querySelectorAll<HTMLButtonElement>('#cameraSeg button').forEach((b) => {
-  b.onclick = () => {
-    if (b.dataset.view === 'launch') frame([launchPoint], 150_000);
-    else if (b.dataset.view === 'targets') frame(targets, 150_000);
-    else frame([launchPoint, ...targets], 3_000_000);
-  };
-});
-
-document.querySelectorAll<HTMLButtonElement>('#sideSeg button').forEach((b) => {
+  document.querySelectorAll<HTMLButtonElement>('#sideSeg button').forEach((b) => {
     b.classList.toggle('active', b.dataset.side === side);
   });
   weaponSel.innerHTML = '';
@@ -372,48 +369,126 @@ interface Flight {
   tag: string;
   sol: FiringSolution;
   sim: SimResult;
+  /** What the other side's satellites and radars make of this flight */
+  report: SensorReport;
   launchTime: Cesium.JulianDate;
   nextEvent: number;
+  nextSensorEvent: number;
   /** Last RV impact, seconds after launch */
   endT: number;
 }
 const flights: Flight[] = [];
 let flightCounter = 0;
 
-function trackEntity(
-  samples: TrajectorySample[],
-  at: (s: number) => Cesium.JulianDate,
-  color: Cesium.Color,
-  label: string,
-  pixelSize: number,
-) {
+/** Ground truth, or only what the enemy's sensors hold (and how they classify it). */
+type Picture = 'truth' | 'sensors';
+let picture: Picture = 'truth';
+
+const GREY = Cesium.Color.fromCssColorString('#8a9a93');
+const CYAN = Cesium.Color.fromCssColorString('#5fd7ff');
+const YELLOW = Cesium.Color.fromCssColorString('#ffe066');
+
+const KIND_STYLE: Record<ObjectKind, { color: Cesium.Color; size: number; width: number }> = {
+  booster: { color: RED, size: 7, width: 3 },
+  bus: { color: GREEN, size: 6, width: 3 },
+  rv: { color: AMBER, size: 5, width: 3 },
+  stage: { color: GREY, size: 4, width: 1 },
+  decoy: { color: GREY, size: 3, width: 1 },
+  chaff: { color: CYAN, size: 4, width: 1 },
+};
+const CLASS_STYLE: Record<TrackClass, { color: Cesium.Color; text: string }> = {
+  unknown: { color: YELLOW, text: 'UNKNOWN' },
+  rv: { color: RED, text: 'RV' },
+  decoy: { color: GREY, text: 'DECOY' },
+  chaff: { color: CYAN, text: 'CHAFF' },
+  booster: { color: Cesium.Color.WHITE, text: 'BOOSTER' },
+  bus: { color: Cesium.Color.WHITE, text: 'PBV' },
+  stage: { color: GREY, text: 'DEBRIS' },
+};
+
+/** Is the object held by an enemy radar at `t` seconds after launch? */
+function seenAt(o: TrackedObject, t: number): boolean {
+  const { samples } = o;
+  if (!samples.length || t < samples[0].t || t > samples[samples.length - 1].t) return false;
+  let lo = 0;
+  let hi = samples.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].t <= t) lo = mid;
+    else hi = mid;
+  }
+  return o.seen[lo];
+}
+
+/** One entity per flying object; how it is drawn depends on the picture mode. */
+function objectEntity(f: Flight, o: TrackedObject, at: (s: number) => Cesium.JulianDate) {
+  const style = KIND_STYLE[o.kind];
   const position = new Cesium.SampledPositionProperty();
-  for (const s of samples) position.addSample(at(s.t), toCart(s.ecef));
-  const start = at(samples[0].t);
-  const stop = at(samples[samples.length - 1].t);
+  for (const s of o.samples) position.addSample(at(s.t), toCart(s.ecef));
+  const start = at(o.samples[0].t);
+  const stop = at(o.samples[o.samples.length - 1].t);
+  const elapsed = (time: Cesium.JulianDate) => Cesium.JulianDate.secondsDifference(time, f.launchTime);
+  const cls = (time: Cesium.JulianDate) => trackClassAt(o, elapsed(time)) ?? 'unknown';
+  const truth = () => picture === 'truth';
+  const minor = o.kind === 'decoy' || o.kind === 'stage' || o.kind === 'chaff';
+  const main = o.kind === 'rv' || o.kind === 'booster' || o.kind === 'bus';
+  const label = o.kind === 'booster' ? f.tag : o.kind === 'bus' ? `${f.tag} BUS` : o.id;
+
+  const visible = new Cesium.CallbackProperty((time) => truth() || seenAt(o, elapsed(time!)), false);
   viewer.entities.add({
     availability: during(start, stop),
     position,
-    point: { pixelSize, color: Cesium.Color.WHITE, outlineColor: color, outlineWidth: 2 },
+    point: {
+      show: visible,
+      pixelSize: new Cesium.CallbackProperty(() => (truth() ? style.size : 6), false),
+      color: new Cesium.CallbackProperty((time) => (truth() ? style.color : CLASS_STYLE[cls(time!)].color), false),
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 1,
+    },
+    ellipsoid: o.chaff
+      ? {
+          radii: new Cesium.CallbackProperty((time) => {
+            const r = chaffRadius(o, elapsed(time!));
+            return new Cesium.Cartesian3(r, r, r);
+          }, false),
+          material: CYAN.withAlpha(0.18),
+          show: visible,
+        }
+      : undefined,
     path: {
+      show: new Cesium.CallbackProperty(truth, false),
       leadTime: 0,
       trailTime: 1e6,
-      width: 3,
+      width: style.width,
       resolution: 2,
-      material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.3, color }),
+      material: minor ? style.color.withAlpha(0.5) : new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.3, color: style.color }),
     },
-    label: { text: label, font: SMALL_FONT, fillColor: Cesium.Color.WHITE, pixelOffset: new Cesium.Cartesian2(0, -14) },
-  });
-  // Keep the flown track on the plot once the vehicle is gone.
-  viewer.entities.add({
-    availability: forever(stop),
-    polyline: {
-      positions: samples.map((s) => toCart(s.ecef)),
-      width: 2,
-      arcType: Cesium.ArcType.NONE,
-      material: color.withAlpha(0.6),
+    label: {
+      show: visible,
+      text: new Cesium.CallbackProperty(
+        (time) => (truth() ? label : `${CLASS_STYLE[cls(time!)].text} ${o.kind === 'booster' ? '' : o.id.replace(/^(RV|DCY)-/, 'T-')}`),
+        false,
+      ),
+      font: SMALL_FONT,
+      fillColor: Cesium.Color.WHITE,
+      pixelOffset: new Cesium.Cartesian2(0, -14),
+      // Penaid labels only when zoomed in, or the raid becomes a smear of text.
+      distanceDisplayCondition: minor ? new Cesium.DistanceDisplayCondition(0, 1_500_000) : undefined,
     },
   });
+  if (main) {
+    // Keep the flown track on the plot once the vehicle is gone.
+    viewer.entities.add({
+      availability: forever(stop),
+      polyline: {
+        show: new Cesium.CallbackProperty(truth, false),
+        positions: o.samples.map((s) => toCart(s.ecef)),
+        width: 2,
+        arcType: Cesium.ArcType.NONE,
+        material: style.color.withAlpha(0.6),
+      },
+    });
+  }
 }
 
 function launch() {
@@ -424,16 +499,31 @@ function launch() {
   const tag = `${sol.spec.side === 'USA' ? 'MM-III' : 'SS-18'} #${id}`;
   const t0 = viewer.clock.currentTime.clone();
   const at = (s: number) => Cesium.JulianDate.addSeconds(t0, s, new Cesium.JulianDate());
-
-  trackEntity(sim.booster, at, RED, tag, 7);
-  if (sim.bus.length > 1) trackEntity(sim.bus, at, GREEN, `${tag} BUS`, 6);
+  const report = evaluateSensors(sim, sol.spec, Cesium.JulianDate.toDate(t0).getTime());
 
   let endT = sim.burnout.t;
+  for (const rv of sim.rvs) if (rv.impact) endT = Math.max(endT, rv.impact.t);
+  const flight: Flight = { id, tag, sol, sim, report, launchTime: t0, nextEvent: 0, nextSensorEvent: 0, endT };
+  for (const o of report.objects) if (o.samples.length > 1) objectEntity(flight, o, at);
+
+  // Where and when the enemy's early-warning satellites saw the plume.
+  const ir = report.events.find((e) => e.kind === 'ir-launch');
+  if (ir) {
+    viewer.entities.add({
+      availability: during(at(ir.t), at(endT + 600)),
+      position: toCart(sim.booster[0].ecef),
+      ellipse: { semiMajorAxis: 60_000, semiMinorAxis: 60_000, material: CYAN.withAlpha(0.15), outline: false },
+      label: {
+        text: `IR LAUNCH · ${ir.sensor.toUpperCase()}`,
+        font: SMALL_FONT,
+        fillColor: CYAN,
+        pixelOffset: new Cesium.Cartesian2(0, 18),
+      },
+    });
+  }
+
   sim.rvs.forEach((rv, k) => {
     if (!rv.released || !rv.impact) return;
-    endT = Math.max(endT, rv.impact.t);
-    trackEntity(rv.samples, at, AMBER, `RV-${rvLetter(k)}`, 5);
-
     // Detonation flash: an expanding, fading disc at the actual impact point.
     const tImpact = at(rv.impact.t);
     const age = (time: Cesium.JulianDate) => Cesium.JulianDate.secondsDifference(time, tImpact);
@@ -467,7 +557,7 @@ function launch() {
     });
   });
 
-  flights.push({ id, tag, sol, sim, launchTime: t0, nextEvent: 0, endT });
+  flights.push(flight);
   if (viewer.clock.multiplier < 30) setWarp(30);
   const stop = at(endT + 120);
   if (Cesium.JulianDate.greaterThan(stop, viewer.clock.stopTime)) viewer.clock.stopTime = stop;
@@ -508,13 +598,26 @@ function logEvents(f: Flight, elapsed: number) {
     else if (ev.kind === 'release') log(`${f.tag} T+${fmtClock(ev.t)} ${ev.label} → ${target}`, 'notice');
     else log(`${f.tag} T+${fmtClock(ev.t)} ${ev.label}`, ev.kind === 'burnout' ? 'notice' : '');
   }
+  const sensorEvents = f.report.events;
+  while (f.nextSensorEvent < sensorEvents.length && sensorEvents[f.nextSensorEvent].t <= elapsed) {
+    const ev = sensorEvents[f.nextSensorEvent++];
+    log(`[${f.report.observer}] ${ev.sensor}: ${f.tag} ${ev.text}`, 'sensor');
+  }
 }
 
 function renderTelemetry(f: Flight, elapsed: number) {
   const el = $('telemetry');
-  const { sim } = f;
+  const { sim, report } = f;
   const released = sim.rvs.filter((rv) => rv.released);
   const impacted = released.filter((rv) => rv.impact && rv.impact.t <= elapsed);
+  const warned = report.firstWarningT !== null && report.firstWarningT <= elapsed;
+  const firstImpact = released.reduce((m, rv) => Math.min(m, rv.impact?.t ?? Infinity), Infinity);
+  const firstWarning = report.events.find((e) => e.t === report.firstWarningT);
+  const warningRow: [string, string, string?] = [
+    `${report.observer} warning`,
+    warned ? `T+${fmtClock(report.firstWarningT!)} · ${firstWarning?.sensor ?? ''}` : 'none yet',
+    warned ? 'warn' : 'hot',
+  ];
   if (elapsed > f.endT) {
     renderDl(el, [
       [f.tag, 'ALL RVs DETONATED', 'warn'],
@@ -525,6 +628,8 @@ function renderTelemetry(f: Flight, elapsed: number) {
           `${Math.round(norm(sub(rv.impact!.ecef, geodeticToEcef(t.lat, t.lon))))} m`,
         ];
       }),
+      warningRow,
+      ['Warning time', warned ? fmtClock(firstImpact - report.firstWarningT!) : 'none', 'hot'],
     ]);
     return;
   }
@@ -539,12 +644,16 @@ function renderTelemetry(f: Flight, elapsed: number) {
   const nextImpact = released
     .filter((rv) => rv.impact!.t > elapsed)
     .reduce((m, rv) => Math.min(m, rv.impact!.t), Infinity);
+  const tracked = report.objects.filter((o) => seenAt(o, elapsed));
+  const unknown = tracked.filter((o) => trackClassAt(o, elapsed) === 'unknown').length;
   const rows: [string, string, string?][] = [
     [f.tag, s ? PHASE_NAMES[s.phase] : '—', s?.phase === 'terminal' ? 'warn' : 'hot'],
     ['Mission time', `T+${fmtClock(elapsed)}`],
     ['RVs released', `${released.filter((rv) => rv.releaseT <= elapsed).length} / ${f.sol.targets.length}`],
     ['RVs impacted', `${impacted.length} / ${released.length}`],
     ['Next impact', Number.isFinite(nextImpact) ? fmtClock(nextImpact - elapsed) : '—', 'hot'],
+    warningRow,
+    ['Enemy radar tracks', tracked.length ? `${tracked.length}${unknown ? ` · ${unknown} unknown` : ''}` : 'none'],
   ];
   if (s) {
     const g = ecefToGeodetic(s.ecef);
@@ -574,6 +683,95 @@ viewer.clock.onTick.addEventListener((clock) => {
   if (elapsed < 0) renderDl($('telemetry'), [['No missiles in flight', '']]);
   else renderTelemetry(shown, elapsed);
 });
+
+// ---------------------------------------------------------------------------
+// Sensor network overlay
+// ---------------------------------------------------------------------------
+
+const SIDE_COLOR: Record<Side, Cesium.Color> = {
+  USA: Cesium.Color.fromCssColorString('#6fb6ff'),
+  USSR: Cesium.Color.fromCssColorString('#ff7b7b'),
+};
+
+/** Point reached from (lat, lon) along `bearing` [deg] after `dist` metres on a sphere. */
+function destination(lat: number, lon: number, bearing: number, dist: number) {
+  const d = dist / 6_371_000;
+  const [p1, l1, b] = [Cesium.Math.toRadians(lat), Cesium.Math.toRadians(lon), Cesium.Math.toRadians(bearing)];
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
+  const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+  return Cesium.Cartesian3.fromRadians(l2, p2);
+}
+
+const sensorEntities: Cesium.Entity[] = [];
+function buildSensorOverlay() {
+  for (const r of RADARS) {
+    const color = SIDE_COLOR[r.side];
+    const range = radarRange(r, 1);
+    const all = r.halfWidth >= 180;
+    const arc: Cesium.Cartesian3[] = [];
+    for (let a = -r.halfWidth; a <= r.halfWidth; a += all ? 6 : 3) arc.push(destination(r.lat, r.lon, r.boresight + a, range));
+    const site = Cesium.Cartesian3.fromDegrees(r.lon, r.lat);
+    const ring = all ? arc : [site, ...arc, site];
+    sensorEntities.push(
+      viewer.entities.add({
+        position: site,
+        point: { pixelSize: 6, color },
+        label: {
+          text: r.name.toUpperCase(),
+          font: SMALL_FONT,
+          fillColor: color,
+          pixelOffset: new Cesium.Cartesian2(0, 14),
+          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 12_000_000),
+        },
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(ring),
+          material: color.withAlpha(0.07),
+          height: 0,
+        },
+        polyline: { positions: all ? [...arc, arc[0]] : ring, width: 1, material: color.withAlpha(0.6) },
+      }),
+    );
+  }
+  for (const sat of SATELLITES) {
+    const color = SIDE_COLOR[sat.side];
+    sensorEntities.push(
+      viewer.entities.add({
+        position: new Cesium.CallbackPositionProperty(
+          (time) => toCart(satelliteEcef(sat, Cesium.JulianDate.toDate(time!).getTime())),
+          false,
+        ),
+        point: { pixelSize: 6, color, outlineColor: Cesium.Color.WHITE, outlineWidth: 1 },
+        label: { text: sat.name.toUpperCase(), font: SMALL_FONT, fillColor: color, pixelOffset: new Cesium.Cartesian2(0, -12) },
+      }),
+    );
+  }
+  // All nine Oko satellites share one Earth-fixed track (it repeats every sidereal day).
+  const oko = SATELLITES.find((s) => s.orbit)!;
+  const track: Cesium.Cartesian3[] = [];
+  for (let m = 0; m <= 1440; m += 4) track.push(toCart(satelliteEcef(oko, oko.orbit!.epochMs + m * 60_000)));
+  sensorEntities.push(
+    viewer.entities.add({
+      polyline: { positions: track, width: 1, arcType: Cesium.ArcType.NONE, material: SIDE_COLOR.USSR.withAlpha(0.35) },
+    }),
+  );
+  setSensorsShown(false);
+}
+
+let sensorsShown = false;
+function setSensorsShown(on: boolean) {
+  sensorsShown = on;
+  for (const e of sensorEntities) e.show = on;
+  $('sensorsBtn').classList.toggle('active', on);
+}
+
+function setPicture(p: Picture) {
+  picture = p;
+  document.querySelectorAll<HTMLButtonElement>('#pictureSeg button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.picture === p);
+  });
+  $('legend').hidden = p !== 'sensors';
+  if (p === 'sensors') setSensorsShown(true);
+}
 
 // ---------------------------------------------------------------------------
 // Controls
@@ -662,6 +860,13 @@ new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas).setInputAction(
   },
   Cesium.ScreenSpaceEventType.LEFT_CLICK,
 );
+
+document.querySelectorAll<HTMLButtonElement>('#pictureSeg button').forEach((b) => {
+  b.onclick = () => setPicture(b.dataset.picture as Picture);
+});
+$('sensorsBtn').onclick = () => setSensorsShown(!sensorsShown);
+buildSensorOverlay();
+setPicture('truth');
 
 $('build').textContent = `BUILD ${__BUILD__}`;
 document.title = `World War 198X · build ${__BUILD__}`;
