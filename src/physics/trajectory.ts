@@ -2,7 +2,7 @@ import { airDensity } from './atmosphere';
 import { G0 } from './constants';
 import { gravityJ2 } from './gravity';
 import { lambert } from './lambert';
-import type { MissileSpec } from './missiles';
+import { type MissileSpec, payloadMass } from './missiles';
 import { type Vec3, add, addScaled, dot, norm, scale, sub, unit } from './vec3';
 import {
   altitude,
@@ -14,7 +14,7 @@ import {
   type Geodetic,
 } from './wgs84';
 
-export type FlightPhase = 'boost' | 'midcourse' | 'terminal';
+export type FlightPhase = 'boost' | 'bus' | 'midcourse' | 'terminal';
 
 export interface TrajectorySample {
   /** Seconds since launch */
@@ -30,27 +30,62 @@ export interface TrajectorySample {
 
 export interface FlightEvent {
   t: number;
-  kind: 'launch' | 'pitchover' | 'staging' | 'burnout' | 'apogee' | 'reentry' | 'impact';
+  kind: 'launch' | 'pitchover' | 'staging' | 'burnout' | 'release' | 'apogee' | 'reentry' | 'impact';
   label: string;
+  /** Re-entry vehicle index, for per-RV events */
+  rv?: number;
 }
 
-export interface SimResult {
+export interface RvResult {
+  /** Index into the target list */
+  index: number;
+  /** False if the bus lacked the delta-v to put this RV on its trajectory */
+  released: boolean;
+  releaseT: number;
+  /** Bus velocity change this RV needs [m/s]; NaN if the bus never got to evaluate it */
+  busDv: number;
+  /** Planned impact time chosen by the bus computer [s since launch] */
+  plannedImpactT: number;
   samples: TrajectorySample[];
-  events: FlightEvent[];
-  /** Guidance achieved the required velocity before propellant ran out */
-  feasible: boolean;
-  /** Velocity still missing at propellant exhaustion [m/s] (0 if feasible) */
-  residualVgo: number;
-  burnout: { t: number; alt: number; speed: number; flightPathAngle: number };
   apogee: { t: number; alt: number };
   impact: { t: number; ecef: Vec3; geo: Geodetic; speed: number } | null;
 }
 
+export interface SimResult {
+  /** Launch to booster burnout */
+  booster: TrajectorySample[];
+  /** Post-boost vehicle, burnout to last RV release */
+  bus: TrajectorySample[];
+  rvs: RvResult[];
+  events: FlightEvent[];
+  /** Booster guidance achieved the required velocity before propellant ran out */
+  feasible: boolean;
+  /** Velocity still missing at booster propellant exhaustion [m/s] */
+  residualVgo: number;
+  burnout: { t: number; alt: number; speed: number; flightPathAngle: number };
+  /** Order in which the bus released RVs (indices into the target list) */
+  releaseOrder: number[];
+  /** Bus delta-v spent [m/s] and propellant used [kg] of `spec.bus.propellant` */
+  busDvUsed: number;
+  busPropellantUsed: number;
+}
+
 export interface SimOptions {
-  /** 1-sigma per-axis burnout velocity error [m/s]; 0 = perfect guidance */
+  /** 1-sigma per-axis velocity error at each RV release [m/s]; 0 = perfect guidance */
   guidanceSigma?: number;
   /** Uniform [0,1) random source, for reproducible dispersion */
   rng?: () => number;
+  /**
+   * Fixed RV release order. When omitted the bus computer sequences greedily,
+   * always serving the target that costs the least delta-v next.
+   */
+  releaseOrder?: number[];
+}
+
+interface State {
+  t: number;
+  r: Vec3;
+  v: Vec3;
 }
 
 const BOOST_DT = 0.5;
@@ -89,11 +124,16 @@ function rk4(r: Vec3, v: Vec3, dt: number, beta: number, thrust: Vec3): [Vec3, V
   return [rn, vn];
 }
 
+const sampleOf = (s: State, phase: FlightPhase): TrajectorySample => ({
+  t: s.t,
+  ecef: eciToEcef(s.r, s.t),
+  alt: altitude(s.r),
+  speed: norm(s.v),
+  phase,
+});
+
 /**
- * Fly a missile from `launchEcef` toward the aim point `aimEcef`, planned to
- * arrive `plannedTof` seconds after launch.
- *
- * Boost follows the way 1970s-80s inertial guidance actually worked:
+ * Booster flight, the way 1970s-80s inertial guidance actually worked:
  *   1. vertical rise out of the silo,
  *   2. an open-loop pitch program toward the target azimuth (1st stage),
  *   3. closed-loop "velocity-to-be-gained" steering on the upper stages:
@@ -101,26 +141,20 @@ function rk4(r: Vec3, v: Vec3, dt: number, beta: number, thrust: Vec3): [Vec3, V
  *      required to coast to the (Earth-rotated) aim point by the planned
  *      impact time, thrusts along the difference, and commands thrust
  *      termination when that difference reaches zero.
- * After burnout the re-entry vehicle is purely ballistic: J2 gravity plus
- * atmospheric drag, integrated with RK4, until it meets the ellipsoid.
- *
- * All integration is done in an inertial frame aligned with ECEF at t = 0.
  */
-export function simulate(
+function flyBoost(
   spec: MissileSpec,
   launchEcef: Vec3,
   aimEcef: Vec3,
   plannedTof: number,
-  opts: SimOptions = {},
-): SimResult {
-  const samples: TrajectorySample[] = [];
-  const events: FlightEvent[] = [{ t: 0, kind: 'launch', label: 'Launch' }];
-
+  samples: TrajectorySample[],
+  events: FlightEvent[],
+): { state: State; feasible: boolean; residualVgo: number } {
   const launchGeo = ecefToGeodetic(launchEcef);
   const aimGeo = ecefToGeodetic(aimEcef);
   const aimEci = ecefToEci(aimEcef, plannedTof);
 
-  // Pitch-over direction: tilt from local vertical toward the aim azimuth.
+  // Directions are frozen in inertial space at launch, as a gyro-stabilised platform holds them.
   const enu = enuBasis(launchGeo.lat, launchGeo.lon);
   const dLon = ((aimGeo.lon - launchGeo.lon) * Math.PI) / 180;
   const la1 = (launchGeo.lat * Math.PI) / 180;
@@ -130,145 +164,270 @@ export function simulate(
     Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dLon),
   );
   const horiz = add(scale(enu.north, Math.cos(az)), scale(enu.east, Math.sin(az)));
-  // Directions are frozen in inertial space at launch, as a gyro-stabilised platform holds them.
   const pitchDir = (pitchDeg: number): Vec3 => {
     const p = (pitchDeg * Math.PI) / 180;
     return add(scale(enu.up, Math.cos(p)), scale(horiz, Math.sin(p)));
   };
   const stage1Burn = spec.stages[0].burnTime;
 
-  let r: Vec3 = [...launchEcef];
-  let v: Vec3 = earthRotationVelocity(r);
-  let t = 0;
-  let mass = spec.payload + spec.stages.reduce((m, s) => m + s.propellant + s.dry, 0);
+  const s: State = { t: 0, r: [...launchEcef], v: earthRotationVelocity(launchEcef) };
+  let mass = payloadMass(spec) + spec.stages.reduce((m, st) => m + st.propellant + st.dry, 0);
   let stageIdx = 0;
   let stageTime = 0;
   let residualVgo = 0;
-  let feasible = false;
-  let crashed = false;
-
-  const record = (phase: FlightPhase) => {
-    samples.push({ t, ecef: eciToEcef(r, t), alt: altitude(r), speed: norm(v), phase });
-  };
-  record('boost');
-
-  // ---- Boost -------------------------------------------------------------
   let pitchedOver = false;
+  samples.push(sampleOf(s, 'boost'));
+
   while (stageIdx < spec.stages.length) {
     const stage = spec.stages[stageIdx];
     const mdot = stage.propellant / stage.burnTime;
-    const thrustForce = mdot * stage.isp * G0;
     const dt = Math.min(BOOST_DT, stage.burnTime - stageTime);
-    const midMass = mass - (mdot * dt) / 2;
-    const thrustAcc = thrustForce / midMass;
+    const thrustAcc = (mdot * stage.isp * G0) / (mass - (mdot * dt) / 2);
 
     let dir: Vec3;
     if (stageIdx === 0) {
-      if (t < spec.verticalRise) {
+      if (s.t < spec.verticalRise) {
         dir = enu.up;
       } else {
         if (!pitchedOver) {
-          events.push({ t, kind: 'pitchover', label: 'Pitch-over' });
+          events.push({ t: s.t, kind: 'pitchover', label: 'Pitch-over' });
           pitchedOver = true;
         }
         // Open-loop pitch program: tilt linearly from vertical to the programmed
         // angle by 1st-stage burnout, keeping loads low in the dense atmosphere.
-        const s = (t + dt / 2 - spec.verticalRise) / (stage1Burn - spec.verticalRise);
-        dir = pitchDir(s * spec.stage1EndPitch);
+        const f = (s.t + dt / 2 - spec.verticalRise) / (stage1Burn - spec.verticalRise);
+        dir = pitchDir(f * spec.stage1EndPitch);
       }
     } else {
-      const req = lambert(r, aimEci, plannedTof - t);
+      const req = lambert(s.r, aimEci, plannedTof - s.t);
       if (!req) break;
-      const vgo = sub(req.v1, v);
+      const vgo = sub(req.v1, s.v);
       residualVgo = norm(vgo);
       if (residualVgo <= thrustAcc * dt) {
         // Thrust termination: the last fraction of a guidance cycle closes the gap exactly.
-        v = req.v1;
-        residualVgo = 0;
-        feasible = true;
-        break;
+        s.v = req.v1;
+        events.push({ t: s.t, kind: 'burnout', label: 'Thrust termination — bus separation' });
+        return { state: s, feasible: true, residualVgo: 0 };
       }
       dir = scale(vgo, 1 / residualVgo);
     }
 
-    const beta = mass / spec.cdA;
-    [r, v] = rk4(r, v, dt, beta, scale(dir, thrustAcc));
-    t += dt;
+    [s.r, s.v] = rk4(s.r, s.v, dt, mass / spec.cdA, scale(dir, thrustAcc));
+    s.t += dt;
     mass -= mdot * dt;
     stageTime += dt;
-    if (altitude(r) < -1) {
-      crashed = true;
-      break;
-    }
+    if (altitude(s.r) < -1) return { state: s, feasible: false, residualVgo };
     if (stageTime >= stage.burnTime - 1e-9) {
       mass -= stage.dry;
       stageIdx++;
       stageTime = 0;
-      events.push({ t, kind: 'staging', label: `${stage.name} burnout / separation` });
+      events.push({ t: s.t, kind: 'staging', label: `${stage.name} burnout / separation` });
     }
-    record('boost');
+    samples.push(sampleOf(s, 'boost'));
   }
+  events.push({ t: s.t, kind: 'burnout', label: 'Propellant exhausted' });
+  return { state: s, feasible: false, residualVgo };
+}
 
-  // Inertial guidance is never perfect: disperse the burnout velocity.
-  const sigma = opts.guidanceSigma ?? 0;
-  if (sigma > 0) {
-    const rng = opts.rng ?? Math.random;
-    v = add(v, [gaussian(rng) * sigma, gaussian(rng) * sigma, gaussian(rng) * sigma]);
+/** Coast (gravity + drag) from `s` to time `until`, recording samples. Mutates `s`. */
+function coastTo(s: State, until: number, beta: number, samples: TrajectorySample[], phase: FlightPhase) {
+  while (s.t < until - 1e-9) {
+    const dt = Math.min(COAST_DT, until - s.t);
+    [s.r, s.v] = rk4(s.r, s.v, dt, beta, [0, 0, 0]);
+    s.t += dt;
+    samples.push(sampleOf(s, phase));
   }
+}
 
-  const burnoutSpeed = norm(v);
-  const burnout = {
-    t,
-    alt: altitude(r),
-    speed: burnoutSpeed,
-    flightPathAngle: (Math.asin(dot(unit(r), v) / burnoutSpeed) * 180) / Math.PI,
-  };
-  events.push({ t, kind: 'burnout', label: feasible ? 'Thrust termination — RV on ballistic path' : 'Propellant exhausted' });
-  record('midcourse');
+/** Ballistic flight of a released RV until it meets the ellipsoid. */
+function flyRv(start: State, beta: number, maxT: number, rv: RvResult, events: FlightEvent[]) {
+  const s: State = { t: start.t, r: start.r, v: start.v };
+  const samples = rv.samples;
+  samples.push(sampleOf(s, 'midcourse'));
+  let apogee = { t: s.t, alt: altitude(s.r) };
+  let pastApogee = false;
+  let reentered = false;
+  const tag = String.fromCharCode(65 + rv.index);
 
-  // ---- Ballistic flight --------------------------------------------------
-  let apogee = { t, alt: altitude(r) };
-  let apogeeLogged = false;
-  let reentryLogged = false;
-  let impact: SimResult['impact'] = null;
-  const maxT = plannedTof * 2 + 600;
-
-  while (!crashed && t < maxT) {
-    const alt0 = altitude(r);
+  while (s.t < maxT) {
+    const alt0 = altitude(s.r);
     const dt = alt0 > 150_000 ? COAST_DT : REENTRY_DT;
-    const r0 = r;
-    const v0 = v;
-    [r, v] = rk4(r, v, dt, spec.rvBeta, [0, 0, 0]);
-    t += dt;
-    const alt = altitude(r);
+    const r0 = s.r;
+    const v0 = s.v;
+    [s.r, s.v] = rk4(s.r, s.v, dt, beta, [0, 0, 0]);
+    s.t += dt;
+    const alt = altitude(s.r);
 
-    if (alt > apogee.alt) apogee = { t, alt };
-    else if (!apogeeLogged) {
-      apogeeLogged = true;
-      events.push({ t: apogee.t, kind: 'apogee', label: `Apogee ${(apogee.alt / 1000).toFixed(0)} km` });
+    if (alt > apogee.alt) apogee = { t: s.t, alt };
+    else if (!pastApogee) {
+      pastApogee = true;
+      events.push({ t: apogee.t, kind: 'apogee', label: `RV-${tag} apogee ${(apogee.alt / 1000).toFixed(0)} km`, rv: rv.index });
     }
-    if (apogeeLogged && !reentryLogged && alt < REENTRY_ALT) {
-      reentryLogged = true;
-      events.push({ t, kind: 'reentry', label: 'Atmospheric re-entry' });
+    if (pastApogee && !reentered && alt < REENTRY_ALT) {
+      reentered = true;
+      events.push({ t: s.t, kind: 'reentry', label: `RV-${tag} re-entry`, rv: rv.index });
     }
-
     if (alt <= 0) {
       // Interpolate the exact surface crossing within the last step.
       const f = alt0 / (alt0 - alt);
-      const tImp = t - dt + f * dt;
-      const rImp = addScaled(r0, sub(r, r0), f);
-      const vImp = addScaled(v0, sub(v, v0), f);
-      t = tImp;
-      r = rImp;
-      v = vImp;
-      const ecef = eciToEcef(rImp, tImp);
-      impact = { t: tImp, ecef, geo: ecefToGeodetic(ecef), speed: norm(vImp) };
-      events.push({ t: tImp, kind: 'impact', label: 'Impact' });
-      record('terminal');
+      s.t = s.t - dt + f * dt;
+      s.r = addScaled(r0, sub(s.r, r0), f);
+      s.v = addScaled(v0, sub(s.v, v0), f);
+      const ecef = eciToEcef(s.r, s.t);
+      rv.impact = { t: s.t, ecef, geo: ecefToGeodetic(ecef), speed: norm(s.v) };
+      events.push({ t: s.t, kind: 'impact', label: `RV-${tag} impact`, rv: rv.index });
+      samples.push(sampleOf(s, 'terminal'));
       break;
     }
-    record(apogeeLogged && alt < REENTRY_ALT ? 'terminal' : 'midcourse');
+    samples.push(sampleOf(s, pastApogee && alt < REENTRY_ALT ? 'terminal' : 'midcourse'));
+  }
+  rv.apogee = apogee;
+}
+
+/** Bus delta-v needed to move from `s` onto a path hitting `aimEcef` at time T. */
+function busDvFor(s: State, aimEcef: Vec3, T: number): { dv: number; v: Vec3 } | null {
+  const sol = lambert(s.r, ecefToEci(aimEcef, T), T - s.t);
+  return sol ? { dv: norm(sub(sol.v1, s.v)), v: sol.v1 } : null;
+}
+
+/** The bus computer picks each RV's impact time to minimise the delta-v it costs. */
+function cheapestImpactTime(s: State, aimEcef: Vec3, guess: number): number {
+  const cost = (T: number) => busDvFor(s, aimEcef, T)?.dv ?? Infinity;
+  const phi = (Math.sqrt(5) - 1) / 2;
+  let a = Math.max(s.t + 120, guess - 900);
+  let b = guess + 900;
+  let c = b - phi * (b - a);
+  let d = a + phi * (b - a);
+  let fc = cost(c);
+  let fd = cost(d);
+  for (let i = 0; i < 40; i++) {
+    if (fc < fd) {
+      b = d;
+      d = c;
+      fd = fc;
+      c = b - phi * (b - a);
+      fc = cost(c);
+    } else {
+      a = c;
+      c = d;
+      fc = fd;
+      d = a + phi * (b - a);
+      fd = cost(d);
+    }
+  }
+  return 0.5 * (a + b);
+}
+
+/**
+ * Fly a MIRVed missile from `launchEcef` against one or more aim points.
+ *
+ * The booster steers the post-boost vehicle ("bus") onto a trajectory to the
+ * first aim point, arriving `plannedTof` seconds after launch, and releases
+ * that RV. It then coasts above the atmosphere and, at fixed intervals, makes
+ * a small burn (solved with Lambert's problem, with the impact time chosen to
+ * minimise delta-v) that puts itself exactly on the next RV's trajectory, and
+ * releases that RV. Each burn draws on the bus's propellant
+ * (rocket equation, with the bus getting lighter as RVs leave), which is what
+ * limits the "footprint" a MIRV bus can cover. Released RVs are purely
+ * ballistic: J2 gravity plus drag, integrated with RK4, until they meet the
+ * ellipsoid.
+ *
+ * All integration is done in an inertial frame aligned with ECEF at t = 0.
+ */
+export function simulate(
+  spec: MissileSpec,
+  launchEcef: Vec3,
+  aimEcefs: Vec3[],
+  plannedTof: number,
+  opts: SimOptions = {},
+): SimResult {
+  const booster: TrajectorySample[] = [];
+  const bus: TrajectorySample[] = [];
+  const events: FlightEvent[] = [{ t: 0, kind: 'launch', label: 'Launch' }];
+  const b = spec.bus;
+  const rvs: RvResult[] = aimEcefs.map((_, index) => ({
+    index,
+    released: false,
+    releaseT: 0,
+    busDv: NaN,
+    plannedImpactT: 0,
+    samples: [],
+    apogee: { t: 0, alt: 0 },
+    impact: null,
+  }));
+
+  const boost = flyBoost(spec, launchEcef, aimEcefs[0], plannedTof, booster, events);
+  const s = boost.state;
+  const speed = norm(s.v);
+  const burnout = {
+    t: s.t,
+    alt: altitude(s.r),
+    speed,
+    flightPathAngle: (Math.asin(dot(unit(s.r), s.v) / speed) * 180) / Math.PI,
+  };
+  let busMass = payloadMass(spec);
+  let propellant = b.propellant;
+  const exhaustV = b.isp * G0;
+  let busDvUsed = 0;
+  const releaseOrder: number[] = [];
+
+  if (boost.feasible) {
+    bus.push(sampleOf(s, 'bus'));
+    const rng = opts.rng ?? Math.random;
+    const sigma = opts.guidanceSigma ?? 0;
+    const maxT = plannedTof * 2 + 900;
+    const remaining = aimEcefs.map((_, i) => i).filter((i) => i !== 0);
+    for (let slot = 0; slot < aimEcefs.length; slot++) {
+      coastTo(s, burnout.t + b.firstRelease + slot * b.releaseInterval, spec.rvBeta, bus, 'bus');
+
+      // Candidate burns: the booster's own target first, then the fixed or cheapest next one.
+      let pick: { k: number; T: number; dv: number; v: Vec3 } | null = null;
+      const candidates = slot === 0 ? [0] : opts.releaseOrder ? [opts.releaseOrder[slot]] : remaining;
+      for (const k of candidates) {
+        const T = k === 0 ? plannedTof : cheapestImpactTime(s, aimEcefs[k], plannedTof + slot * b.releaseInterval);
+        const burn = busDvFor(s, aimEcefs[k], T);
+        rvs[k].plannedImpactT = T;
+        rvs[k].busDv = burn?.dv ?? Infinity;
+        if (burn && (!pick || burn.dv < pick.dv)) pick = { k, T, dv: burn.dv, v: burn.v };
+      }
+      if (!pick) break;
+      const needed = busMass * (1 - Math.exp(-pick.dv / exhaustV));
+      if (needed > propellant) break; // the rest lie outside the footprint: RVs stay on the bus
+      const k = pick.k;
+      if (remaining.includes(k)) remaining.splice(remaining.indexOf(k), 1);
+      propellant -= needed;
+      busMass -= needed;
+      busDvUsed += pick.dv;
+      s.v = pick.v;
+      // Inertial measurement errors: each RV leaves with a slightly wrong velocity.
+      const v: Vec3 =
+        sigma > 0 ? add(s.v, [gaussian(rng) * sigma, gaussian(rng) * sigma, gaussian(rng) * sigma]) : s.v;
+      const rv = rvs[k];
+      rv.released = true;
+      rv.releaseT = s.t;
+      releaseOrder.push(k);
+      busMass -= b.rvMass;
+      events.push({
+        t: s.t,
+        kind: 'release',
+        label: `RV-${String.fromCharCode(65 + k)} released (bus Δv ${pick.dv.toFixed(0)} m/s)`,
+        rv: k,
+      });
+      flyRv({ t: s.t, r: s.r, v }, spec.rvBeta, maxT, rv, events);
+    }
   }
 
-  return { samples, events, feasible: feasible && !crashed, residualVgo, burnout, apogee, impact };
+  events.sort((a, c) => a.t - c.t);
+  return {
+    booster,
+    bus,
+    rvs,
+    events,
+    feasible: boost.feasible,
+    residualVgo: boost.residualVgo,
+    burnout,
+    releaseOrder,
+    busDvUsed,
+    busPropellantUsed: b.propellant - propellant,
+  };
 }

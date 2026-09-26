@@ -22,6 +22,10 @@ export const LAUNCH_SITES: LaunchSite[] = [
 
 export const TARGETS: LaunchSite[] = [
   { side: 'USSR', name: 'Moscow', lat: 55.7558, lon: 37.6173 },
+  { side: 'USSR', name: 'Tula', lat: 54.1931, lon: 37.6173 },
+  { side: 'USSR', name: 'Vladimir', lat: 56.1291, lon: 40.4066 },
+  { side: 'USSR', name: 'Kalinin', lat: 56.8587, lon: 35.9176 },
+  { side: 'USSR', name: 'Kozelsk ICBM field', lat: 54.03, lon: 35.78 },
   { side: 'USSR', name: 'Leningrad', lat: 59.9343, lon: 30.3351 },
   { side: 'USSR', name: 'Kiev', lat: 50.4501, lon: 30.5234 },
   { side: 'USSR', name: 'Murmansk (Northern Fleet)', lat: 68.9585, lon: 33.0827 },
@@ -33,6 +37,10 @@ export const TARGETS: LaunchSite[] = [
   { side: 'USA', name: 'Offutt AFB (SAC HQ)', lat: 41.118, lon: -95.912 },
   { side: 'USA', name: 'Cheyenne Mountain (NORAD)', lat: 38.744, lon: -104.846 },
   { side: 'USA', name: 'Chicago', lat: 41.8781, lon: -87.6298 },
+  { side: 'USA', name: 'Minot ICBM field', lat: 48.416, lon: -101.358 },
+  { side: 'USA', name: 'F.E. Warren ICBM field', lat: 41.133, lon: -104.867 },
+  { side: 'USA', name: 'Denver', lat: 39.7392, lon: -104.9903 },
+  { side: 'USA', name: 'Colorado Springs', lat: 38.8339, lon: -104.8214 },
   { side: 'USA', name: 'Los Angeles', lat: 34.0522, lon: -118.2437 },
   { side: 'USA', name: 'Norfolk (Atlantic Fleet)', lat: 36.8508, lon: -76.2859 },
 ];

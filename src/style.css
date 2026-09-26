@@ -25,19 +25,18 @@ body {
   inset: 0;
 }
 
-/* Keep Cesium's own widgets clear of the HUD. */
-.cesium-viewer-toolbar {
-  right: 372px !important;
-}
-.cesium-viewer-timelineContainer {
-  right: 0 !important;
+/* The globe sits beside the HUD on wide screens so nothing hides behind it. */
+@media (min-width: 721px) {
+  #cesiumContainer {
+    right: 368px;
+  }
 }
 
 #hud {
   position: absolute;
   top: 8px;
   right: 8px;
-  bottom: 36px;
+  bottom: 8px;
   width: 352px;
   overflow-y: auto;
   background: var(--panel);
@@ -54,7 +53,7 @@ body {
   content: '';
   position: fixed;
   pointer-events: none;
-  inset: 8px 8px 36px auto;
+  inset: 8px 8px 8px auto;
   width: 352px;
   background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
 }
@@ -260,13 +259,79 @@ dd.hot {
   #hud {
     padding: 10px 16px;
   }
-  .cesium-viewer-toolbar {
-    right: 8px !important;
-  }
   .cesium-viewer-animationContainer {
     display: none;
   }
   .cesium-viewer-timelineContainer {
     left: 0 !important;
   }
+}
+
+/* Target list / MIRV table */
+.count {
+  float: right;
+  color: var(--amber);
+}
+#targetList {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+}
+#targetList li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+#targetList .rv {
+  color: var(--bg);
+  background: var(--red);
+  padding: 0 4px;
+  font-size: 11px;
+}
+#targetList .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#targetList .tag {
+  color: var(--amber);
+  font-size: 10px;
+}
+#targetList button {
+  font-size: 10px;
+  padding: 0 5px;
+}
+.row select {
+  flex: 1;
+  margin-top: 0;
+  min-width: 0;
+}
+#rvTable {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+#rvTable th {
+  color: var(--dim);
+  font-weight: normal;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+#rvTable td,
+#rvTable th {
+  padding: 2px 3px;
+}
+#rvTable td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#rvTable td.warn {
+  color: var(--red);
+}
+#rvTable td.ok {
+  color: var(--fg);
 }

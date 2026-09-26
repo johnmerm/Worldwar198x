@@ -34,9 +34,11 @@
           <span id="launchCoord" class="coord"></span>
           <button id="pickLaunch" class="small">Pick on globe</button>
         </div>
-        <label>Target <select id="targetSel"></select></label>
+        <label>Targets <span id="rvCount" class="count"></span></label>
+        <ol id="targetList"></ol>
         <div class="row">
-          <span id="targetCoord" class="coord"></span>
+          <select id="targetSel"></select>
+          <button id="addTarget" class="small">Add</button>
           <button id="pickTarget" class="small">Pick on globe</button>
         </div>
         <label
@@ -53,12 +55,22 @@
       <section id="solutionBox" hidden>
         <h2>Firing solution</h2>
         <dl id="solution"></dl>
+        <table id="rvTable"></table>
         <button id="launchBtn" class="danger">Launch</button>
       </section>
 
       <section>
         <h2>Time warp</h2>
         <div class="seg" id="warpSeg"></div>
+      </section>
+
+      <section>
+        <h2>Camera</h2>
+        <div class="seg" id="cameraSeg">
+          <button data-view="globe">Globe</button>
+          <button data-view="launch">Launch site</button>
+          <button data-view="targets">Target area</button>
+        </div>
       </section>
 
       <section>

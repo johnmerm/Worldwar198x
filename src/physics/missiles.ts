@@ -10,13 +10,30 @@ export interface Stage {
   burnTime: number;
 }
 
+/** Post-boost vehicle ("bus") that carries and individually aims the RVs. */
+export interface BusSpec {
+  /** Re-entry vehicles carried */
+  rvCount: number;
+  /** Mass of one RV [kg] */
+  rvMass: number;
+  /** Bus structure, guidance and engine [kg] */
+  dry: number;
+  /** Bus propellant [kg] */
+  propellant: number;
+  /** Bus engine specific impulse [s] */
+  isp: number;
+  /** Seconds after booster burnout until the first RV is released */
+  firstRelease: number;
+  /** Seconds between successive RV releases */
+  releaseInterval: number;
+}
+
 export interface MissileSpec {
   id: string;
   name: string;
   side: 'USA' | 'USSR';
   stages: Stage[];
-  /** Post-boost bus + warhead(s) [kg] */
-  payload: number;
+  bus: BusSpec;
   /** Booster drag area Cd*A [m^2] */
   cdA: number;
   /** Re-entry vehicle ballistic coefficient m/(Cd*A) [kg/m^2]; slender RVs keep more speed */
@@ -39,7 +56,7 @@ export interface MissileSpec {
 /**
  * LGM-30G Minuteman III: three solid stages (M55, SR19, SR73) with an NS-20
  * inertial platform. Masses and burn times are public figures; vacuum Isp is
- * calibrated so the simulated guidance reaches ~11,000 km (single RV).
+ * calibrated so the simulated guidance reaches ~11,000 km with a full bus.
  */
 export const MINUTEMAN_III: MissileSpec = {
   id: 'mm3',
@@ -50,14 +67,15 @@ export const MINUTEMAN_III: MissileSpec = {
     { name: 'SR19 2nd stage', propellant: 6237, dry: 795, isp: 300, burnTime: 66 },
     { name: 'SR73 3rd stage', propellant: 3306, dry: 431, isp: 305, burnTime: 61 },
   ],
-  payload: 900,
+  // Mk12A bus: 3 RVs, PSRE bipropellant engine.
+  bus: { rvCount: 3, rvMass: 180, dry: 250, propellant: 110, isp: 235, firstRelease: 30, releaseInterval: 40 },
   cdA: 0.55,
   rvBeta: 12000,
   verticalRise: 8,
   stage1EndPitch: 65,
   guidanceSigma: 0.07,
   cep: 200,
-  rangeKm: 11000, // published: 13,000 km
+  rangeKm: 11000, // published: ~13,000 km
 };
 
 /**
@@ -72,7 +90,8 @@ export const R36M: MissileSpec = {
     { name: 'RD-264 1st stage', propellant: 147900, dry: 8000, isp: 318, burnTime: 120 },
     { name: 'RD-0228 2nd stage', propellant: 37600, dry: 3000, isp: 345, burnTime: 190 },
   ],
-  payload: 8000,
+  // Mod 4 bus: 10 RVs on a large liquid-fuelled bus.
+  bus: { rvCount: 10, rvMass: 450, dry: 2000, propellant: 1500, isp: 300, firstRelease: 30, releaseInterval: 25 },
   cdA: 2.4,
   rvBeta: 9000,
   verticalRise: 10,
@@ -81,5 +100,9 @@ export const R36M: MissileSpec = {
   cep: 400,
   rangeKm: 11000, // published: 11,000-16,000 km depending on payload
 };
+
+/** Everything above the booster stages: bus, its propellant and all RVs [kg]. */
+export const payloadMass = (spec: MissileSpec): number =>
+  spec.bus.dry + spec.bus.propellant + spec.bus.rvCount * spec.bus.rvMass;
 
 export const MISSILES: MissileSpec[] = [MINUTEMAN_III, R36M];

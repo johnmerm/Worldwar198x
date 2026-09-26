@@ -20,23 +20,30 @@ export interface GeoPoint {
   lon: number;
 }
 
-export interface FiringSolution {
-  spec: MissileSpec;
-  launch: GeoPoint;
+export interface TargetSolution {
   target: GeoPoint;
-  profile: TrajectoryProfile;
-  /** Planned flight time [s] */
-  plannedTof: number;
-  /** Where guidance actually aims, compensating J2 and drag [ECEF m] */
+  /** Where the bus actually aims this RV, compensating J2 and drag [ECEF m] */
   aimEcef: Vec3;
   /** Distance between aim point and true target [m] */
   aimOffset: number;
-  /** Great-ellipse surface range [m] and launch azimuth [deg] */
+  /** Great-ellipse surface range from the launch site [m] and launch azimuth [deg] */
   range: number;
   azimuth: number;
-  iterations: number;
   /** Nominal (error-free) miss distance after convergence [m] */
   nominalMiss: number;
+  /** Inside the bus footprint and converged */
+  feasible: boolean;
+}
+
+export interface FiringSolution {
+  spec: MissileSpec;
+  launch: GeoPoint;
+  profile: TrajectoryProfile;
+  /** Planned flight time to the first target [s] */
+  plannedTof: number;
+  targets: TargetSolution[];
+  iterations: number;
+  /** Booster reaches the first target and every RV is inside the footprint */
   feasible: boolean;
   nominal: SimResult;
 }
@@ -77,51 +84,78 @@ export function minimumEnergyTof(launchEcef: Vec3, targetEcef: Vec3): number {
   return 0.5 * (a + b);
 }
 
+/** Released RVs in bus order, then any left on the bus (they fail the same way again). */
+const fixedOrder = (sim: SimResult): number[] => [
+  ...sim.releaseOrder,
+  ...sim.rvs.map((rv) => rv.index).filter((i) => !sim.releaseOrder.includes(i)),
+];
+
 /**
  * The fire-control computer. Kepler/Lambert guidance ignores Earth's
- * oblateness (J2) and air drag, so aiming straight at the target misses by
- * kilometres. We fly the full simulation, measure the miss, move the aim
- * point the opposite way, and repeat ("shooting method") until the nominal
- * impact lands within a few metres of the target.
+ * oblateness (J2) and air drag, so aiming straight at a target misses by
+ * kilometres. We fly the full simulation, measure each RV's miss, move each
+ * aim point the opposite way, and repeat ("shooting method") until every
+ * nominal impact lands within a few metres of its target.
+ *
+ * The first target is the booster's; the rest are reached by bus manoeuvres.
  */
 export function solveFiringSolution(
   spec: MissileSpec,
   launch: GeoPoint,
-  target: GeoPoint,
+  targets: GeoPoint[],
   profile: TrajectoryProfile = 'minimum-energy',
 ): FiringSolution {
+  if (targets.length < 1 || targets.length > spec.bus.rvCount) {
+    throw new RangeError(`${spec.name} carries 1-${spec.bus.rvCount} RVs, got ${targets.length} targets`);
+  }
   const launchEcef = geodeticToEcef(launch.lat, launch.lon, 0);
-  const targetEcef = geodeticToEcef(target.lat, target.lon, 0);
-  const plannedTof = minimumEnergyTof(launchEcef, targetEcef) * PROFILE_TOF_FACTOR[profile];
-  const geo = vincentyInverse(launch.lat, launch.lon, target.lat, target.lon);
+  const targetEcefs = targets.map((t) => geodeticToEcef(t.lat, t.lon, 0));
+  const plannedTof = minimumEnergyTof(launchEcef, targetEcefs[0]) * PROFILE_TOF_FACTOR[profile];
 
-  let aim = targetEcef;
-  let nominal = simulate(spec, launchEcef, aim, plannedTof);
-  let miss = Infinity;
+  const aims = [...targetEcefs];
+  const missOf = (sim: SimResult, k: number) => {
+    const impact = sim.rvs[k].impact;
+    return impact ? sub(impact.ecef, targetEcefs[k]) : null;
+  };
+  let nominal = simulate(spec, launchEcef, aims, plannedTof);
   let iterations = 0;
   for (; iterations < 12; iterations++) {
-    if (!nominal.impact || !nominal.feasible) break;
-    const err = sub(nominal.impact.ecef, targetEcef);
-    miss = norm(err);
-    if (miss < 5) break;
-    aim = projectToSurface(sub(aim, err));
-    nominal = simulate(spec, launchEcef, aim, plannedTof);
+    if (!nominal.feasible) break;
+    let worst = 0;
+    targetEcefs.forEach((_, k) => {
+      const err = missOf(nominal, k);
+      if (!err || !nominal.rvs[k].released) return;
+      worst = Math.max(worst, norm(err));
+      aims[k] = projectToSurface(sub(aims[k], err));
+    });
+    if (worst < 5) break;
+    // Freeze the bus's release sequence so the aim-point iteration converges.
+    nominal = simulate(spec, launchEcef, aims, plannedTof, { releaseOrder: fixedOrder(nominal) });
   }
-  if (nominal.impact) miss = norm(sub(nominal.impact.ecef, targetEcef));
+
+  const solved: TargetSolution[] = targets.map((target, k) => {
+    const geo = vincentyInverse(launch.lat, launch.lon, target.lat, target.lon);
+    const err = missOf(nominal, k);
+    const miss = err ? norm(err) : Infinity;
+    return {
+      target,
+      aimEcef: aims[k],
+      aimOffset: norm(sub(aims[k], targetEcefs[k])),
+      range: geo.distance,
+      azimuth: geo.azimuth,
+      nominalMiss: miss,
+      feasible: nominal.feasible && nominal.rvs[k].released && miss < 1000,
+    };
+  });
 
   return {
     spec,
     launch,
-    target,
     profile,
     plannedTof,
-    aimEcef: aim,
-    aimOffset: norm(sub(aim, targetEcef)),
-    range: geo.distance,
-    azimuth: geo.azimuth,
+    targets: solved,
     iterations,
-    nominalMiss: miss,
-    feasible: nominal.feasible && miss < 1000,
+    feasible: solved.every((t) => t.feasible),
     nominal,
   };
 }
@@ -129,7 +163,9 @@ export function solveFiringSolution(
 /** Fly the solution for real, with inertial-guidance errors. */
 export function flySolution(sol: FiringSolution, rng: () => number = Math.random): SimResult {
   const launchEcef = geodeticToEcef(sol.launch.lat, sol.launch.lon, 0);
-  return simulate(sol.spec, launchEcef, sol.aimEcef, sol.plannedTof, {
+  const aims = sol.targets.map((t) => t.aimEcef);
+  return simulate(sol.spec, launchEcef, aims, sol.plannedTof, {
+    releaseOrder: fixedOrder(sol.nominal),
     guidanceSigma: sol.spec.guidanceSigma,
     rng,
   });
