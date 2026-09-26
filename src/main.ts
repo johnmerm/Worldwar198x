@@ -663,5 +663,7 @@ new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas).setInputAction(
   Cesium.ScreenSpaceEventType.LEFT_CLICK,
 );
 
+$('build').textContent = `BUILD ${__BUILD__}`;
+document.title = `World War 198X · build ${__BUILD__}`;
 applySide('USA');
 log('Strategic command online. Select a fire mission.', 'notice');
