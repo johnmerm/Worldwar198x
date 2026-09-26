@@ -337,6 +337,9 @@ function flyObject(start: State, beta: number, maxT: number, breakupQ: number, o
   }
 }
 
+/** Velocity trim [m/s] the bus can make without drawing on its main propellant. */
+const FREE_TRIM = 5;
+
 /** Breakup dynamic pressures [Pa]. */
 const Q_CHAFF = 50; // dipoles scattered almost as soon as the air thickens (~95 km)
 const Q_DECOY = 5_000; // light balloons / replicas (~60 km)
@@ -459,7 +462,8 @@ export function simulate(
         if (burn && (!pick || burn.dv < pick.dv)) pick = { k, T, dv: burn.dv, v: burn.v };
       }
       if (!pick) break;
-      const needed = busMass * (1 - Math.exp(-pick.dv / exhaustV));
+      // Trims of a few m/s come from attitude/vernier thrusters, free of bus propellant.
+      const needed = pick.dv <= FREE_TRIM ? 0 : busMass * (1 - Math.exp(-pick.dv / exhaustV));
       if (needed > propellant) break; // the rest lie outside the footprint: RVs stay on the bus
       const k = pick.k;
       if (remaining.includes(k)) remaining.splice(remaining.indexOf(k), 1);

@@ -10,7 +10,7 @@ side, a silo field and up to one target per re-entry vehicle, let the
 fire-control computer solve the trajectories, and watch the booster, the
 MIRV bus and each warhead fly on a CesiumJS globe.
 
-<!-- play-link -->**[▶ Play build 3](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b3/index.html)**<!-- /play-link -->
+<!-- play-link -->**[▶ Play build 4](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b4/index.html)**<!-- /play-link -->
 
 ## Running
 
@@ -37,15 +37,49 @@ that ships with Cesium.
 ## How to play
 
 1. Pick **USA · SAC** or **USSR · RVSN**.
-2. Choose a weapon, a launch site and targets, from the lists or with **Pick on globe**.
+2. Choose a launch site. Every early-1980s ICBM field is on the map; click one of your own to select it. The field then offers only the missiles historically based there.
+3. Choose targets from the list, with **Pick on globe**, or by clicking an enemy silo field for a counterforce strike.
    - Minuteman III carries 3 RVs and the SS-18 carries 10. Target A is the booster's primary; the bus delivers the rest.
    - Targets outside the bus **footprint** are flagged and those RVs stay on the bus.
-3. Pick a trajectory profile:
+4. Pick a trajectory profile:
    - **Minimum energy** uses the least fuel.
    - **Lofted** flies higher and slower.
    - **Depressed** flies lower and faster; radar sees it later, but it uses more energy and is less accurate.
-4. **Compute firing solution**, then **Launch**. Use time warp to follow the ~30-minute flight.
+5. **Compute firing solution**, then **Launch**. Use time warp to follow the ~30-minute flight.
    **Camera → Target area** frames the warheads coming down.
+
+## Silo fields and missiles (`src/game/sites.ts`, `src/physics/missiles.ts`)
+
+| Side | Field (approx. centre) | Unit | Missiles |
+|---|---|---|---|
+| USA | Malmstrom AFB, MT | 341st SMW | Minuteman II, Minuteman III |
+| USA | Minot AFB, ND | 91st SMW | Minuteman III |
+| USA | Grand Forks AFB, ND | 321st SMW | Minuteman III |
+| USA | Ellsworth AFB, SD | 44th SMW | Minuteman II |
+| USA | F.E. Warren AFB, WY | 90th SMW | Minuteman III, Peacekeeper (1986) |
+| USA | Whiteman AFB, MO | 351st SMW | Minuteman II |
+| USA | Davis-Monthan AFB, AZ / McConnell AFB, KS / Little Rock AFB, AR | 390th / 381st / 308th SMW | Titan II |
+| USA | Rural Wisconsin | scenario (fictional) | Minuteman II/III, Peacekeeper |
+| USSR | Dombarovsky, Kartaly, Uzhur, Aleysk, Zhangiz-Tobe, Derzhavinsk | RVSN | R-36M (SS-18) |
+| USSR | Kozelsk, Tatishchevo, Pervomaysk, Khmelnytskyi | RVSN | UR-100N (SS-19) |
+| USSR | Yedrovo, Vypolzovo | RVSN | MR-UR-100 (SS-17) |
+| USSR | Bershet, Drovyanaya, Svobodny | RVSN | UR-100 (SS-11) |
+
+| Missile | RVs | Range in this model | Published CEP |
+|---|---|---|---|
+| Minuteman III | 3 | 11,000 km | 200 m |
+| Minuteman II | 1 | 12,000 km | 370 m |
+| Peacekeeper | 10 | 10,000 km | 100 m |
+| Titan II | 1 (9 Mt) | 13,000 km | 1,300 m |
+| SS-18 | 10 | 11,000 km | 400 m |
+| SS-19 | 6 | 10,000 km | 350 m |
+| SS-17 | 4 | 10,000 km | 420 m |
+| SS-11 | 1 | 10,300 km | 1,100 m |
+
+Stage masses and burn times are public approximations. Vacuum Isp and the
+first-stage pitch program are calibrated so that the simulated guidance
+reaches roughly the published range. A test checks that every missile at
+every field can reach the opposing capital.
 
 ## Physics model (`src/physics`)
 

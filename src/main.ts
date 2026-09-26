@@ -19,7 +19,7 @@ import {
   sub,
   vincentyInverse,
 } from './physics';
-import { LAUNCH_SITES, type Side, TARGETS } from './game/sites';
+import { LAUNCH_SITES, type LaunchSite, type Side, type Target, targetsFor } from './game/sites';
 import {
   type ObjectKind,
   RADARS,
@@ -140,7 +140,7 @@ function log(text: string, kind: '' | 'alert' | 'notice' | 'sensor' = '') {
 let side: Side = 'USA';
 let launchPoint: GeoPoint = LAUNCH_SITES[0];
 /** Target list; the first is the booster's primary, the rest are reached by the MIRV bus. */
-let targets: GeoPoint[] = [TARGETS[0]];
+let targets: GeoPoint[] = [targetsFor('USA')[0]];
 let solution: FiringSolution | null = null;
 let pickMode: 'launch' | 'target' | null = null;
 const CUSTOM = '__custom__';
@@ -163,7 +163,10 @@ const plan = (options: Cesium.Entity.ConstructorOptions) => {
 };
 
 const sideSites = () => LAUNCH_SITES.filter((s) => s.side === side);
-const enemyTargets = () => TARGETS.filter((t) => t.side !== side);
+const targetLists: Record<Side, Target[]> = { USA: targetsFor('USA'), USSR: targetsFor('USSR') };
+const enemyTargets = () => targetLists[side];
+/** The silo field the launch point belongs to (null for a point picked on the globe). */
+const launchSite = (): LaunchSite | null => LAUNCH_SITES.find((s) => s === launchPoint) ?? null;
 const currentWeapon = (): MissileSpec => MISSILES.find((m) => m.id === weaponSel.value)!;
 
 function drawTargets() {
@@ -214,6 +217,7 @@ function refreshPlan() {
   );
   launchMarker.label!.text = new Cesium.ConstantProperty(launchPoint.name.toUpperCase());
   $('launchCoord').textContent = fmtCoord(launchPoint);
+  $('siteNote').textContent = launchSite()?.note ?? 'Designated launch point';
   targets = targets.slice(0, currentWeapon().bus.rvCount);
   renderTargetList();
   clearPlan();
@@ -227,6 +231,13 @@ function fillLaunchSelect() {
   if (!sites.includes(launchPoint as (typeof sites)[number])) {
     launchSel.add(new Option(launchPoint.name, CUSTOM, false, true));
   }
+  // Only the missiles actually based at this field (any of ours for a picked point).
+  const site = launchSite();
+  const prev = weaponSel.value;
+  weaponSel.innerHTML = '';
+  for (const m of MISSILES.filter((w) => w.side === side && (!site || site.weapons.includes(w.id)))) {
+    weaponSel.add(new Option(`${m.name} · ${m.bus.rvCount} RV · ${m.rangeKm.toLocaleString()} km`, m.id, false, m.id === prev));
+  }
 }
 
 function applySide(newSide: Side) {
@@ -234,10 +245,6 @@ function applySide(newSide: Side) {
   document.querySelectorAll<HTMLButtonElement>('#sideSeg button').forEach((b) => {
     b.classList.toggle('active', b.dataset.side === side);
   });
-  weaponSel.innerHTML = '';
-  for (const m of MISSILES.filter((w) => w.side === side)) {
-    weaponSel.add(new Option(`${m.name} · ${m.bus.rvCount} RV · ${m.rangeKm.toLocaleString()} km`, m.id));
-  }
   launchPoint = sideSites()[0];
   fillLaunchSelect();
   targetSel.innerHTML = '';
@@ -496,7 +503,7 @@ function launch() {
   const sol = solution;
   const sim = flySolution(sol);
   const id = ++flightCounter;
-  const tag = `${sol.spec.side === 'USA' ? 'MM-III' : 'SS-18'} #${id}`;
+  const tag = `${sol.spec.short} #${id}`;
   const t0 = viewer.clock.currentTime.clone();
   const at = (s: number) => Cesium.JulianDate.addSeconds(t0, s, new Cesium.JulianDate());
   const report = evaluateSensors(sim, sol.spec, Cesium.JulianDate.toDate(t0).getTime());
@@ -757,6 +764,35 @@ function buildSensorOverlay() {
   setSensorsShown(false);
 }
 
+/** Silo fields of both sides, always on the map and clickable. */
+const fieldEntities = new Map<Cesium.Entity, LaunchSite>();
+function buildFieldOverlay() {
+  for (const site of LAUNCH_SITES) {
+    const color = site.scenario ? GREEN : SIDE_COLOR[site.side];
+    const e = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(site.lon, site.lat),
+      ellipse: {
+        semiMajorAxis: site.fieldRadius * 1000,
+        semiMinorAxis: site.fieldRadius * 1000,
+        height: 0,
+        material: color.withAlpha(0.12),
+        outline: true,
+        outlineColor: color.withAlpha(0.7),
+      },
+      point: { pixelSize: 4, color },
+      label: {
+        text: site.name.replace(/ AFB.*| \(scenario\)/, '').toUpperCase(),
+        font: SMALL_FONT,
+        fillColor: color,
+        pixelOffset: new Cesium.Cartesian2(0, 12),
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 9_000_000),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    });
+    fieldEntities.set(e, site);
+  }
+}
+
 let sensorsShown = false;
 function setSensorsShown(on: boolean) {
   sensorsShown = on;
@@ -841,7 +877,21 @@ window.addEventListener('keydown', (e) => {
 
 new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas).setInputAction(
   (e: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
-    if (!pickMode) return;
+    if (!pickMode) {
+      // Clicking a silo field: ours becomes the launch site, the enemy's a target.
+      const picked = viewer.scene.pick(e.position) as { id?: Cesium.Entity } | undefined;
+      const site = picked?.id ? fieldEntities.get(picked.id) : undefined;
+      if (!site) return;
+      if (site.side === side) {
+        launchPoint = site;
+        fillLaunchSelect();
+        refreshPlan();
+      } else {
+        const t = enemyTargets().find((x) => x.name === `${site.name} missile field`);
+        if (t && !targets.includes(t)) addTarget(t);
+      }
+      return;
+    }
     const hit = viewer.camera.pickEllipsoid(e.position, viewer.scene.globe.ellipsoid);
     if (!hit) return;
     const c = Cesium.Cartographic.fromCartesian(hit);
@@ -866,6 +916,7 @@ document.querySelectorAll<HTMLButtonElement>('#pictureSeg button').forEach((b) =
 });
 $('sensorsBtn').onclick = () => setSensorsShown(!sensorsShown);
 buildSensorOverlay();
+buildFieldOverlay();
 setPicture('truth');
 
 $('build').textContent = `BUILD ${__BUILD__}`;
