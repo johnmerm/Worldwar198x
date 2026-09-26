@@ -1,0 +1,85 @@
+export interface Stage {
+  name: string;
+  /** Propellant mass [kg] */
+  propellant: number;
+  /** Structural mass dropped at staging [kg] */
+  dry: number;
+  /** Vacuum specific impulse [s] */
+  isp: number;
+  /** Burn duration [s] */
+  burnTime: number;
+}
+
+export interface MissileSpec {
+  id: string;
+  name: string;
+  side: 'USA' | 'USSR';
+  stages: Stage[];
+  /** Post-boost bus + warhead(s) [kg] */
+  payload: number;
+  /** Booster drag area Cd*A [m^2] */
+  cdA: number;
+  /** Re-entry vehicle ballistic coefficient m/(Cd*A) [kg/m^2]; slender RVs keep more speed */
+  rvBeta: number;
+  /** Seconds of vertical rise before pitch-over */
+  verticalRise: number;
+  /** Pitch from vertical reached at 1st-stage burnout by the open-loop program [deg] */
+  stage1EndPitch: number;
+  /**
+   * 1-sigma velocity error per axis at burnout [m/s], lumping gyro drift,
+   * accelerometer bias and platform misalignment of the inertial system.
+   */
+  guidanceSigma: number;
+  /** Published circular error probable, for display [m] */
+  cep: number;
+  /** Maximum range this model's guidance achieves (min-energy, single RV) [km] */
+  rangeKm: number;
+}
+
+/**
+ * LGM-30G Minuteman III: three solid stages (M55, SR19, SR73) with an NS-20
+ * inertial platform. Masses and burn times are public figures; vacuum Isp is
+ * calibrated so the simulated guidance reaches ~11,000 km (single RV).
+ */
+export const MINUTEMAN_III: MissileSpec = {
+  id: 'mm3',
+  name: 'LGM-30G Minuteman III',
+  side: 'USA',
+  stages: [
+    { name: 'M55 1st stage', propellant: 20780, dry: 2292, isp: 285, burnTime: 61 },
+    { name: 'SR19 2nd stage', propellant: 6237, dry: 795, isp: 300, burnTime: 66 },
+    { name: 'SR73 3rd stage', propellant: 3306, dry: 431, isp: 305, burnTime: 61 },
+  ],
+  payload: 900,
+  cdA: 0.55,
+  rvBeta: 12000,
+  verticalRise: 8,
+  stage1EndPitch: 65,
+  guidanceSigma: 0.07,
+  cep: 200,
+  rangeKm: 11000, // published: 13,000 km
+};
+
+/**
+ * R-36M (SS-18 "Satan"): two liquid stages, very large throw-weight.
+ * Liquid engines can be shut down precisely on guidance command.
+ */
+export const R36M: MissileSpec = {
+  id: 'r36m',
+  name: 'R-36M (SS-18 Satan)',
+  side: 'USSR',
+  stages: [
+    { name: 'RD-264 1st stage', propellant: 147900, dry: 8000, isp: 318, burnTime: 120 },
+    { name: 'RD-0228 2nd stage', propellant: 37600, dry: 3000, isp: 345, burnTime: 190 },
+  ],
+  payload: 8000,
+  cdA: 2.4,
+  rvBeta: 9000,
+  verticalRise: 10,
+  stage1EndPitch: 65,
+  guidanceSigma: 0.1,
+  cep: 400,
+  rangeKm: 11000, // published: 11,000-16,000 km depending on payload
+};
+
+export const MISSILES: MissileSpec[] = [MINUTEMAN_III, R36M];
