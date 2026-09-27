@@ -1,3 +1,4 @@
+import type { BomberFlight, BomberSpec } from '../physics/aircraft';
 import type { MissileSpec } from '../physics/missiles';
 import type { SimResult, TrajectorySample } from '../physics/trajectory';
 import { type Vec3, dot, norm, sub } from '../physics/vec3';
@@ -5,7 +6,7 @@ import { ecefToGeodetic, enuBasis, geodeticToEcef } from '../physics/wgs84';
 import { lineOfSight, orbitEcef, spaceBackground } from './orbits';
 import { GEO_RADIUS, RADARS, type Radar, SATELLITES, type Satellite, type Side } from './sites';
 
-export type ObjectKind = 'booster' | 'bus' | 'stage' | 'rv' | 'decoy' | 'chaff';
+export type ObjectKind = 'booster' | 'bus' | 'stage' | 'rv' | 'decoy' | 'chaff' | 'bomber';
 
 /**
  * What the defender can say about an object.
@@ -13,7 +14,7 @@ export type ObjectKind = 'booster' | 'bus' | 'stage' | 'rv' | 'decoy' | 'chaff';
  * - 'rv' / 'decoy': sorted by atmospheric drag below DISCRIMINATION_ALT
  * - others: obvious from the size of the radar return
  */
-export type TrackClass = 'unknown' | 'rv' | 'decoy' | 'chaff' | 'booster' | 'bus' | 'stage';
+export type TrackClass = 'unknown' | 'rv' | 'decoy' | 'chaff' | 'booster' | 'bus' | 'stage' | 'bomber';
 
 export interface TrackedObject {
   id: string;
@@ -136,50 +137,13 @@ const fmtLatLon = (p: Vec3) => {
 };
 
 /**
- * Run the defender's sensor network over a whole flight.
- *
- * - Early-warning satellites look for the booster plume (boost phase only).
- *   DSP looks straight down; Oko needs the plume silhouetted against space.
- * - Radars track any object above their horizon, inside their sector and
- *   within the range its radar cross-section allows. Objects inside a
- *   blooming chaff cloud are hidden; the cloud itself shows as clutter.
- * - RVs and decoys look identical in vacuum. Only once they are tracked below
- *   DISCRIMINATION_ALT does drag give away which is which.
+ * Radar tracking of every object, sample by sample: horizon, sector and
+ * RCS-dependent range, with objects inside a chaff cloud hidden. Fills in
+ * `seen`, `firstSeen` and `classifiedT`, appends events, and returns each
+ * radar's first-contact time.
  */
-export function evaluateSensors(sim: SimResult, spec: MissileSpec, launchUnixMs: number): SensorReport {
-  const observer = opponent(spec.side);
-  const objects = objectsOf(sim, spec);
-  const events: SensorEvent[] = [];
-  const radars = RADARS.filter((r) => r.side === observer);
-  const sats = SATELLITES.filter((s) => s.side === observer);
+function trackWithRadars(objects: TrackedObject[], radars: Radar[], events: SensorEvent[]): Map<string, number> {
   const clouds = objects.filter((o) => o.kind === 'chaff');
-
-  // --- Infrared launch detection -----------------------------------------
-  let firstIr: number | null = null;
-  for (const sat of sats) {
-    let firstLook: number | null = null;
-    for (const s of sim.booster) {
-      if (s.alt < PLUME_MIN_ALT) continue;
-      const satPos = satelliteEcef(sat, launchUnixMs + s.t * 1000);
-      if (!satelliteSeesPlume(sat, satPos, s.ecef)) {
-        firstLook = null;
-        continue;
-      }
-      firstLook ??= s.t;
-      if (s.t - firstLook >= IR_CONFIRM_S) {
-        events.push({
-          t: s.t,
-          sensor: sat.name,
-          kind: 'ir-launch',
-          text: `IR launch detection near ${fmtLatLon(sim.booster[0].ecef)}`,
-        });
-        firstIr = firstIr === null ? s.t : Math.min(firstIr, s.t);
-        break;
-      }
-    }
-  }
-
-  // --- Radar tracking -----------------------------------------------------
   const contact = new Map<string, number>();
   for (const o of objects) {
     o.samples.forEach((s, i) => {
@@ -216,6 +180,54 @@ export function evaluateSensors(sim: SimResult, spec: MissileSpec, launchUnixMs:
     events.push({ t, sensor: name, kind: 'radar-contact', text: 'radar contact — incoming raid' });
   }
 
+  return contact;
+}
+
+/**
+ * Run the defender's sensor network over a whole flight.
+ *
+ * - Early-warning satellites look for the booster plume (boost phase only).
+ *   DSP looks straight down; Oko needs the plume silhouetted against space.
+ * - Radars track any object above their horizon, inside their sector and
+ *   within the range its radar cross-section allows. Objects inside a
+ *   blooming chaff cloud are hidden; the cloud itself shows as clutter.
+ * - RVs and decoys look identical in vacuum. Only once they are tracked below
+ *   DISCRIMINATION_ALT does drag give away which is which.
+ */
+export function evaluateSensors(sim: SimResult, spec: MissileSpec, launchUnixMs: number): SensorReport {
+  const observer = opponent(spec.side);
+  const objects = objectsOf(sim, spec);
+  const events: SensorEvent[] = [];
+  const radars = RADARS.filter((r) => r.side === observer);
+  const sats = SATELLITES.filter((s) => s.side === observer);
+
+  // --- Infrared launch detection -----------------------------------------
+  let firstIr: number | null = null;
+  for (const sat of sats) {
+    let firstLook: number | null = null;
+    for (const s of sim.booster) {
+      if (s.alt < PLUME_MIN_ALT) continue;
+      const satPos = satelliteEcef(sat, launchUnixMs + s.t * 1000);
+      if (!satelliteSeesPlume(sat, satPos, s.ecef)) {
+        firstLook = null;
+        continue;
+      }
+      firstLook ??= s.t;
+      if (s.t - firstLook >= IR_CONFIRM_S) {
+        events.push({
+          t: s.t,
+          sensor: sat.name,
+          kind: 'ir-launch',
+          text: `IR launch detection near ${fmtLatLon(sim.booster[0].ecef)}`,
+        });
+        firstIr = firstIr === null ? s.t : Math.min(firstIr, s.t);
+        break;
+      }
+    }
+  }
+
+  const contact = trackWithRadars(objects, radars, events);
+
   events.sort((a, b) => a.t - b.t);
   const firstRadarT = contact.size ? Math.min(...contact.values()) : null;
   const warnings = [firstIr, firstRadarT].filter((x): x is number => x !== null);
@@ -233,4 +245,34 @@ export function trackClassAt(o: TrackedObject, t: number): TrackClass | null {
   if (!o.firstSeen || t < o.firstSeen.t) return null;
   if (o.classifiedT !== null && t >= o.classifiedT) return o.kind;
   return 'unknown';
+}
+
+/**
+ * The defender's view of a bomber sortie. There is no rocket plume for the
+ * IR satellites; radars only pick the aircraft up once it rises above their
+ * horizon, a few hundred kilometres out at cruise altitude.
+ */
+export function evaluateBomberSensors(flight: BomberFlight, spec: BomberSpec): SensorReport {
+  const observer = opponent(spec.side);
+  const objects: TrackedObject[] = [
+    {
+      id: spec.short,
+      kind: 'bomber',
+      rcs: spec.rcs,
+      samples: flight.samples,
+      seen: new Array(flight.samples.length).fill(false),
+      firstSeen: null,
+      classifiedT: null,
+    },
+  ];
+  const events: SensorEvent[] = [];
+  const contact = trackWithRadars(
+    objects,
+    RADARS.filter((r) => r.side === observer),
+    events,
+  );
+  for (const e of events) if (e.kind === 'radar-contact') e.text = 'radar contact — aircraft inbound';
+  events.sort((a, b) => a.t - b.t);
+  const firstRadarT = contact.size ? Math.min(...contact.values()) : null;
+  return { observer, objects, events, firstWarningT: firstRadarT, firstRadarT };
 }

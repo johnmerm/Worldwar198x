@@ -165,7 +165,8 @@ const plan = (options: Cesium.Entity.ConstructorOptions) => {
   return e;
 };
 
-const sideSites = () => LAUNCH_SITES.filter((s) => s.side === side);
+// WIP: bomber sorties are modelled (physics/aircraft.ts) but not wired into the UI yet, so bases are left out.
+const sideSites = () => LAUNCH_SITES.filter((s) => s.side === side && s.kind !== 'airbase');
 const targetLists: Record<Side, Target[]> = { USA: targetsFor('USA'), USSR: targetsFor('USSR') };
 const enemyTargets = () => targetLists[side];
 /** The silo field the launch point belongs to (null for a point picked on the globe). */
@@ -407,6 +408,7 @@ const KIND_STYLE: Record<ObjectKind, { color: Cesium.Color; size: number; width:
   stage: { color: GREY, size: 4, width: 1 },
   decoy: { color: GREY, size: 3, width: 1 },
   chaff: { color: CYAN, size: 4, width: 1 },
+  bomber: { color: GREY, size: 7, width: 2 },
 };
 const CLASS_STYLE: Record<TrackClass, { color: Cesium.Color; text: string }> = {
   unknown: { color: YELLOW, text: 'UNKNOWN' },
@@ -416,6 +418,7 @@ const CLASS_STYLE: Record<TrackClass, { color: Cesium.Color; text: string }> = {
   booster: { color: Cesium.Color.WHITE, text: 'BOOSTER' },
   bus: { color: Cesium.Color.WHITE, text: 'PBV' },
   stage: { color: GREY, text: 'DEBRIS' },
+  bomber: { color: Cesium.Color.WHITE, text: 'AIRCRAFT' },
 };
 
 /** Is the object held by an enemy radar at `t` seconds after launch? */
@@ -599,7 +602,7 @@ function sampleAt(samples: TrajectorySample[], t: number): TrajectorySample | nu
   };
 }
 
-const PHASE_NAMES = { boost: 'BOOST', bus: 'BUS DEPLOYMENT', midcourse: 'MIDCOURSE', terminal: 'TERMINAL' } as const;
+const PHASE_NAMES = { boost: 'BOOST', bus: 'BUS DEPLOYMENT', midcourse: 'MIDCOURSE', terminal: 'TERMINAL', cruise: 'CRUISE' } as const;
 
 /** Play a presentation cue once per flight. */
 function cue(f: Flight, key: string, play: () => void) {
@@ -942,7 +945,7 @@ new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas).setInputAction(
       // Clicking a silo field: ours becomes the launch site, the enemy's a target.
       const picked = viewer.scene.pick(e.position) as { id?: Cesium.Entity } | undefined;
       const site = picked?.id ? fieldEntities.get(picked.id) : undefined;
-      if (!site) return;
+      if (!site || site.kind === 'airbase') return;
       if (site.side === side) {
         launchPoint = site;
         fillLaunchSelect();

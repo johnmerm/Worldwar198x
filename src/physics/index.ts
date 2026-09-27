@@ -8,3 +8,4 @@ export * from './geodesy';
 export * from './missiles';
 export * from './trajectory';
 export * from './targeting';
+export * from './aircraft';

@@ -14,7 +14,7 @@ import {
   type Geodetic,
 } from './wgs84';
 
-export type FlightPhase = 'boost' | 'bus' | 'midcourse' | 'terminal';
+export type FlightPhase = 'boost' | 'bus' | 'midcourse' | 'terminal' | 'cruise';
 
 export interface TrajectorySample {
   /** Seconds since launch */

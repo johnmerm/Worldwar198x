@@ -289,8 +289,114 @@ export const UR100: MissileSpec = {
   rangeKm: 10300, // published: 10,600 km
 };
 
+/** UGM-73 Poseidon C3 (SLBM): two solid stages, up to 10 small Mk3 RVs. Stellar-aided inertial guidance. */
+export const POSEIDON: MissileSpec = {
+  id: 'poseidon',
+  short: 'C3',
+  name: 'UGM-73 Poseidon C3',
+  side: 'USA',
+  stages: [
+    { name: 'Poseidon 1st stage', propellant: 15500, dry: 1500, isp: 285, burnTime: 55 },
+    { name: 'Poseidon 2nd stage', propellant: 6500, dry: 700, isp: 295, burnTime: 60 },
+  ],
+  bus: { rvCount: 10, rvMass: 80, dry: 400, propellant: 200, isp: 280, firstRelease: 25, releaseInterval: 20 },
+  penaids: { decoysPerRv: 1, decoyBeta: 300, chaffPerRv: 1, chaffBeta: 1, chaffExpansion: 5, separation: 2 },
+  rcs: { booster: 8, stage: 2, bus: 1, rv: 0.03, decoy: 0.03, chaff: 200 },
+  stageBeta: 150,
+  cdA: 0.8,
+  rvBeta: 9000,
+  verticalRise: 8,
+  stage1EndPitch: 65,
+  guidanceSigma: 0.2,
+  cep: 550,
+  rangeKm: 4600,
+};
+
+/** UGM-96 Trident I C4 (SLBM), from 1979: three solid stages, eight Mk4 RVs, stellar-inertial guidance. */
+export const TRIDENT_I: MissileSpec = {
+  id: 'trident1',
+  short: 'C4',
+  name: 'UGM-96 Trident I C4',
+  side: 'USA',
+  stages: [
+    { name: 'Trident 1st stage', propellant: 17500, dry: 1500, isp: 290, burnTime: 65 },
+    { name: 'Trident 2nd stage', propellant: 8000, dry: 700, isp: 300, burnTime: 65 },
+    { name: 'Trident 3rd stage', propellant: 2000, dry: 250, isp: 300, burnTime: 40 },
+  ],
+  bus: { rvCount: 8, rvMass: 90, dry: 400, propellant: 200, isp: 280, firstRelease: 25, releaseInterval: 20 },
+  penaids: { decoysPerRv: 1, decoyBeta: 300, chaffPerRv: 1, chaffBeta: 1, chaffExpansion: 5, separation: 2 },
+  rcs: { booster: 8, stage: 2, bus: 1, rv: 0.03, decoy: 0.03, chaff: 200 },
+  stageBeta: 150,
+  cdA: 0.8,
+  rvBeta: 10000,
+  verticalRise: 8,
+  stage1EndPitch: 55,
+  guidanceSigma: 0.13,
+  cep: 380,
+  rangeKm: 7400,
+};
+
+/** R-29 (SS-N-8 Sawfly) SLBM on Delta I/II submarines: two liquid stages, one RV, stellar-inertial guidance. */
+export const R29: MissileSpec = {
+  id: 'r29',
+  short: 'SS-N-8',
+  name: 'R-29 (SS-N-8 Sawfly)',
+  side: 'USSR',
+  stages: [
+    { name: 'R-29 1st stage', propellant: 22000, dry: 2000, isp: 312, burnTime: 90 },
+    { name: 'R-29 2nd stage', propellant: 5500, dry: 700, isp: 333, burnTime: 120 },
+  ],
+  bus: { ...SINGLE_RV, rvMass: 1100, dry: 150 },
+  penaids: { decoysPerRv: 1, decoyBeta: 400, chaffPerRv: 1, chaffBeta: 1, chaffExpansion: 5, separation: 2 },
+  rcs: { booster: 12, stage: 4, bus: 1, rv: 0.2, decoy: 0.2, chaff: 300 },
+  stageBeta: 150,
+  cdA: 1.4,
+  rvBeta: 7000,
+  verticalRise: 10,
+  stage1EndPitch: 65,
+  guidanceSigma: 0.3,
+  cep: 900,
+  rangeKm: 7800,
+};
+
+/** R-29R (SS-N-18 Stingray) SLBM on Delta III submarines: two liquid stages, three RVs. */
+export const R29R: MissileSpec = {
+  id: 'r29r',
+  short: 'SS-N-18',
+  name: 'R-29R (SS-N-18 Stingray)',
+  side: 'USSR',
+  stages: [
+    { name: 'R-29R 1st stage', propellant: 23500, dry: 2000, isp: 312, burnTime: 90 },
+    { name: 'R-29R 2nd stage', propellant: 6000, dry: 700, isp: 333, burnTime: 120 },
+  ],
+  bus: { rvCount: 3, rvMass: 350, dry: 450, propellant: 150, isp: 290, firstRelease: 25, releaseInterval: 25 },
+  penaids: { decoysPerRv: 1, decoyBeta: 400, chaffPerRv: 1, chaffBeta: 1, chaffExpansion: 5, separation: 2 },
+  rcs: { booster: 12, stage: 4, bus: 1, rv: 0.15, decoy: 0.15, chaff: 300 },
+  stageBeta: 150,
+  cdA: 1.4,
+  rvBeta: 8000,
+  verticalRise: 10,
+  stage1EndPitch: 65,
+  guidanceSigma: 0.3,
+  cep: 900,
+  rangeKm: 6500,
+};
+
 /** Everything above the booster stages: bus, its propellant and all RVs [kg]. */
 export const payloadMass = (spec: MissileSpec): number =>
   spec.bus.dry + spec.bus.propellant + spec.bus.rvCount * spec.bus.rvMass;
 
-export const MISSILES: MissileSpec[] = [MINUTEMAN_III, MINUTEMAN_II, PEACEKEEPER, TITAN_II, R36M, UR100N, MR_UR100, UR100];
+export const MISSILES: MissileSpec[] = [
+  MINUTEMAN_III,
+  MINUTEMAN_II,
+  PEACEKEEPER,
+  TITAN_II,
+  POSEIDON,
+  TRIDENT_I,
+  R36M,
+  UR100N,
+  MR_UR100,
+  UR100,
+  R29,
+  R29R,
+];
