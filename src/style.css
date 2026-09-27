@@ -612,6 +612,14 @@ header {
   border-color: var(--amber);
   animation: blink 1.1s steps(2) infinite;
 }
+.title-legal {
+  margin: 14px auto 0;
+  max-width: 520px;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.5;
+  opacity: 0.8;
+}
 .title-build {
   margin-top: 18px;
   color: var(--dim);

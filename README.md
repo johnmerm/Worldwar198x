@@ -10,7 +10,13 @@ side, a silo field and up to one target per re-entry vehicle, let the
 fire-control computer solve the trajectories, and watch the booster, the
 MIRV bus and each warhead fly on a CesiumJS globe.
 
-<!-- play-link -->**[▶ Play build 5](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b5/index.html)**<!-- /play-link -->
+> **Disclaimer:** an independent, non-commercial fan project. It is not
+> affiliated with, sponsored by or endorsed by the creators, studio or rights
+> holders of *Future War 198X* (1982). No footage, artwork, characters,
+> dialogue, music or other material from the film is used. The art, text and
+> sound are original, and the film is referenced only as an inspiration.
+
+<!-- play-link -->**[▶ Play build 6](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b6/index.html)**<!-- /play-link -->
 
 ## Running
 
