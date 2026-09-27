@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Strategic ICBM war game inspired by Future War 198X",
+  "description": "Strategic ICBM simulation game (independent fan project)",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
