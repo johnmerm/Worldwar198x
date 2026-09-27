@@ -16,7 +16,7 @@ MIRV bus and each warhead fly on a CesiumJS globe.
 > dialogue, music or other material from the film is used. The art, text and
 > sound are original, and the film is referenced only as an inspiration.
 
-<!-- play-link -->**[▶ Play build 6](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b6/index.html)**<!-- /play-link -->
+<!-- play-link -->**[▶ Play build 6-1](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-slbm-bombers-wip/site/b6-1/index.html)**<!-- /play-link -->
 
 ## Running
 

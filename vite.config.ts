@@ -3,10 +3,12 @@ import { readFileSync, readdirSync, rmSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
-// Build number: bumped by `npm run release` before every push. It names the
-// output folder (site/b<N>/) so every published URL is new, which defeats
+// Build ID: bumped by `npm run release` before every push. It names the
+// output folder (site/b<ID>/) so every published URL is new, which defeats
 // githack's aggressive caching, and it is shown in the game's header.
-const BUILD: number = JSON.parse(readFileSync('build.json', 'utf8')).build;
+// Side branches carry a sub-build that follows the main build: 6-1, 6-2, ...
+const buildInfo: { build: number; sub?: number } = JSON.parse(readFileSync('build.json', 'utf8'));
+const BUILD = buildInfo.sub === undefined ? `${buildInfo.build}` : `${buildInfo.build}-${buildInfo.sub}`;
 const CESIUM_VERSION: string = JSON.parse(readFileSync('node_modules/cesium/package.json', 'utf8')).version;
 const cesiumSource = 'node_modules/cesium/Build/Cesium';
 const cesiumDirs = ['Workers', 'ThirdParty', 'Assets', 'Widgets'];
@@ -30,7 +32,7 @@ function publishLayout(): Plugin {
     transformIndexHtml: () => [{ tag: 'script', attrs: { src: `${CESIUM_CDN}Cesium.js` }, injectTo: 'head' }],
     closeBundle() {
       for (const entry of readdirSync(SITE)) {
-        if (/^b\d+$/.test(entry) && entry !== `b${BUILD}`) rmSync(`${SITE}/${entry}`, { recursive: true });
+        if (/^b\d+(-\d+)?$/.test(entry) && entry !== `b${BUILD}`) rmSync(`${SITE}/${entry}`, { recursive: true });
       }
     },
   };

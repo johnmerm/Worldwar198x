@@ -18,3 +18,7 @@ So **before every push**:
 3. Give the user the new link: `https://raw.githack.com/johnmerm/Worldwar198x/<branch>/site/b<N>/index.html`
 
 Never push without bumping the build number. Never edit files in `site/` by hand.
+
+Side branches carry a sub-build after main's number: `build.json` holds
+`{ "build": 6, "sub": 1 }`, the release bumps only `sub`, and the build is
+served from `site/b6-1/`. Main has no `sub` field.
