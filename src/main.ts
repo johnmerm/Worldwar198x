@@ -19,6 +19,9 @@ import {
   sub,
   vincentyInverse,
 } from './physics';
+import { isMuted, setMuted, sfx, unlockAudio } from './ui/audio';
+import { showBanner } from './ui/banner';
+import { playEnding } from './ui/ending';
 import { LAUNCH_SITES, type LaunchSite, type Side, type Target, targetsFor } from './game/sites';
 import {
   type ObjectKind,
@@ -381,6 +384,8 @@ interface Flight {
   launchTime: Cesium.JulianDate;
   nextEvent: number;
   nextSensorEvent: number;
+  /** One-shot presentation cues already played (first release, first impact, ...) */
+  cues: Set<string>;
   /** Last RV impact, seconds after launch */
   endT: number;
 }
@@ -510,7 +515,7 @@ function launch() {
 
   let endT = sim.burnout.t;
   for (const rv of sim.rvs) if (rv.impact) endT = Math.max(endT, rv.impact.t);
-  const flight: Flight = { id, tag, sol, sim, report, launchTime: t0, nextEvent: 0, nextSensorEvent: 0, endT };
+  const flight: Flight = { id, tag, sol, sim, report, launchTime: t0, nextEvent: 0, nextSensorEvent: 0, endT, cues: new Set() };
   for (const o of report.objects) if (o.samples.length > 1) objectEntity(flight, o, at);
 
   // Where and when the enemy's early-warning satellites saw the plume.
@@ -596,10 +601,55 @@ function sampleAt(samples: TrajectorySample[], t: number): TrajectorySample | nu
 
 const PHASE_NAMES = { boost: 'BOOST', bus: 'BUS DEPLOYMENT', midcourse: 'MIDCOURSE', terminal: 'TERMINAL' } as const;
 
+/** Play a presentation cue once per flight. */
+function cue(f: Flight, key: string, play: () => void) {
+  if (f.cues.has(key)) return;
+  f.cues.add(key);
+  play();
+}
+
+const SIDE_NAME: Record<Side, string> = { USA: 'AMERICAN', USSR: 'SOVIET' };
+
+/** The first detonation ends the game: there is nothing left to win. */
+function endGame(f: Flight, target: string) {
+  const r = f.report;
+  const firstImpact = Math.min(...f.sim.rvs.filter((rv) => rv.impact).map((rv) => rv.impact!.t));
+  const warned = r.firstWarningT !== null && r.firstWarningT < firstImpact;
+  viewer.clock.shouldAnimate = false;
+  playEnding(
+    {
+      tag: f.tag,
+      target,
+      defender: SIDE_NAME[r.observer],
+      warning: warned ? firstImpact - r.firstWarningT! : null,
+      warnedBy: warned ? (r.events.find((e) => e.t === r.firstWarningT)?.sensor ?? null) : null,
+    },
+    () => (viewer.clock.shouldAnimate = true),
+    () => window.location.reload(),
+  );
+}
+
 function logEvents(f: Flight, elapsed: number) {
   while (f.nextEvent < f.sim.events.length && f.sim.events[f.nextEvent].t <= elapsed) {
     const ev = f.sim.events[f.nextEvent++];
     const target = ev.rv !== undefined ? f.sol.targets[ev.rv].target.name : '';
+    if (ev.kind === 'launch') {
+      sfx.klaxon();
+      showBanner('LAUNCH', `${f.tag} · ${f.sol.launch.name.toUpperCase()}`, 'alert');
+    } else if (ev.kind === 'release') {
+      cue(f, 'release', () => {
+        sfx.blip();
+        showBanner('MIRV RELEASE', `${f.tag} · BUS DEPLOYING WARHEADS`, 'notice');
+      });
+    } else if (ev.kind === 'reentry') {
+      cue(f, 'reentry', () => {
+        sfx.warning();
+        showBanner('RE-ENTRY', `${f.tag} · WARHEADS IN THE ATMOSPHERE`, 'notice');
+      });
+    } else if (ev.kind === 'impact') {
+      sfx.rumble();
+      cue(f, 'impact', () => endGame(f, target));
+    }
     if (ev.kind === 'launch') log(`${f.tag} LAUNCH — ${f.sol.launch.name}`, 'alert');
     else if (ev.kind === 'impact') log(`${f.tag} ${ev.label.toUpperCase()} — ${target}`, 'alert');
     else if (ev.kind === 'release') log(`${f.tag} T+${fmtClock(ev.t)} ${ev.label} → ${target}`, 'notice');
@@ -609,6 +659,17 @@ function logEvents(f: Flight, elapsed: number) {
   while (f.nextSensorEvent < sensorEvents.length && sensorEvents[f.nextSensorEvent].t <= elapsed) {
     const ev = sensorEvents[f.nextSensorEvent++];
     log(`[${f.report.observer}] ${ev.sensor}: ${f.tag} ${ev.text}`, 'sensor');
+    if (ev.kind === 'ir-launch') {
+      cue(f, 'ir', () => {
+        sfx.blip();
+        showBanner(`${SIDE_NAME[f.report.observer]} EARLY WARNING`, `${ev.sensor.toUpperCase()} · LAUNCH DETECTED`, 'sensor');
+      });
+    } else if (ev.kind === 'radar-contact') {
+      cue(f, 'radar', () => {
+        sfx.blip();
+        showBanner('RADAR CONTACT', `${ev.sensor.toUpperCase()} · INCOMING RAID`, 'sensor');
+      });
+    }
   }
 }
 
@@ -918,6 +979,18 @@ $('sensorsBtn').onclick = () => setSensorsShown(!sensorsShown);
 buildSensorOverlay();
 buildFieldOverlay();
 setPicture('truth');
+
+// Title screen and sound.
+$('titleBuild').textContent = `BUILD ${__BUILD__}`;
+$('titleStart').onclick = () => {
+  unlockAudio();
+  sfx.confirm();
+  $('title').hidden = true;
+};
+$('muteBtn').onclick = () => {
+  setMuted(!isMuted());
+  $('muteBtn').textContent = isMuted() ? 'SND OFF' : 'SND ON';
+};
 
 $('build').textContent = `BUILD ${__BUILD__}`;
 document.title = `World War 198X · build ${__BUILD__}`;

@@ -10,7 +10,7 @@ side, a silo field and up to one target per re-entry vehicle, let the
 fire-control computer solve the trajectories, and watch the booster, the
 MIRV bus and each warhead fly on a CesiumJS globe.
 
-<!-- play-link -->**[▶ Play build 4](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b4/index.html)**<!-- /play-link -->
+<!-- play-link -->**[▶ Play build 5](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b5/index.html)**<!-- /play-link -->
 
 ## Running
 
@@ -47,6 +47,17 @@ that ships with Cesium.
    - **Depressed** flies lower and faster; radar sees it later, but it uses more energy and is less accurate.
 5. **Compute firing solution**, then **Launch**. Use time warp to follow the ~30-minute flight.
    **Camera → Target area** frames the warheads coming down.
+
+## Presentation and ending (`src/ui`)
+
+- **Anime look:**
+  - an 80s-style title card;
+  - a whole-screen CRT overlay (scanlines, vignette, a faint flicker);
+  - full-width alert cards for launch, enemy early warning, radar contact, MIRV release and re-entry;
+  - synthesized Web Audio sound effects, with a mute toggle in the header.
+
+  Motion effects are off when the system asks for reduced motion.
+- **The ending:** the first detonation of any flight stops the clock, flashes the screen and plays the ending. It uses the flight's own sensor data, such as which enemy satellite or radar saw it coming and how many minutes of warning that gave. Every run ends the same way: **there is no winner**. You can continue the simulation or restart.
 
 ## Silo fields and missiles (`src/game/sites.ts`, `src/physics/missiles.ts`)
 

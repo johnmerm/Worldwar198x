@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="./assets/index-DWFAdYDL.js"></script>
+    <script type="module" crossorigin src="./assets/index-VIVeegDs.js"></script>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Cesium.js"></script>
   </head>
   <body>
@@ -16,6 +16,7 @@
 
     <aside id="hud">
       <header>
+        <button id="muteBtn" class="small mute" title="Sound on/off">SND ON</button>
         <h1>WORLD WAR 198X</h1>
         <div class="sub">STRATEGIC COMMAND // ICBM FIRE CONTROL · <span id="build"></span></div>
       </header>
@@ -101,6 +102,33 @@
         <ol id="log"></ol>
       </section>
     </aside>
+
+    <div id="banner" class="banner" hidden></div>
+    <div id="crt" aria-hidden="true"></div>
+    <div id="flash" hidden></div>
+
+    <div id="ending" hidden role="dialog" aria-label="Ending">
+      <div id="endingText"></div>
+      <div id="endingButtons" hidden>
+        <button id="endingContinue">Continue simulation</button>
+        <button id="endingRestart" class="primary">Restart</button>
+      </div>
+    </div>
+
+    <div id="title" role="dialog" aria-label="Title screen">
+      <div class="title-inner">
+        <div class="title-kicker">FUTURE WAR · STRATEGIC SIMULATION</div>
+        <div class="title-main" data-text="WORLD WAR 198X">WORLD WAR 198X</div>
+        <div class="title-jp">世界大戦 198X</div>
+        <div class="title-rule"></div>
+        <p class="title-copy">
+          Ballistic missiles on a WGS-84 Earth. Inertial guidance, MIRV buses, decoys and chaff.<br />
+          Early-warning satellites and radars that see it coming.
+        </p>
+        <button id="titleStart" class="title-start">▶ CLICK TO BEGIN</button>
+        <div class="title-build" id="titleBuild"></div>
+      </div>
+    </div>
 
     <div id="pickHint" hidden>CLICK THE GLOBE TO DESIGNATE · ESC TO CANCEL</div>
   </body>
