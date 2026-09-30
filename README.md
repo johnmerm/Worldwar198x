@@ -16,7 +16,18 @@ MIRV bus and each warhead fly on a CesiumJS globe.
 > dialogue, music or other material from the film is used. The art, text and
 > sound are original, and the film is referenced only as an inspiration.
 
-<!-- play-link -->**[▶ Play build 6](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b6/index.html)**<!-- /play-link -->
+## Play
+
+<!-- play-link -->**[▶ Play build 7](https://raw.githack.com/johnmerm/Worldwar198x/main/site/b7/index.html)**<!-- /play-link --> (latest, `main`)
+
+| Branch | Build | Link |
+|---|---|---|
+| `main` | latest | see above (updated on every release) |
+| `claude/anime-war-game-icbm-rjekr1` | 6 | [site/b6](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b6/index.html) |
+| `claude/anime-war-game-slbm-bombers-wip` (unfinished submarine / bomber work) | 6-1 | [site/b6-1](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-slbm-bombers-wip/site/b6-1/index.html) |
+
+The build number is shown in the page (tab title, title screen, header) and is
+part of every URL, so you always know which version githack is serving.
 
 ## Running
 

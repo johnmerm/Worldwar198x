@@ -4,6 +4,12 @@ Browser ICBM strategy game: Vite + TypeScript + CesiumJS. Physics lives in
 `src/physics/`, early-warning satellites and radars in `src/sensors/` (both
 renderer-independent and unit-tested); the Cesium UI is `src/main.ts`.
 
+## Branches
+
+- `main` is the primary branch; `npm run release` on it bumps the build (7, 8, ...).
+- `claude/anime-war-game-icbm-rjekr1` is the original development branch (build 6).
+- `claude/anime-war-game-slbm-bombers-wip` holds unfinished work on sub-builds (6-1, ...).
+
 ## Checks
 
 - `npx tsc --noEmit` and `npx vitest run` must pass before any commit.
