@@ -1,41 +1,21 @@
-// The ending: at the first detonation the simulation stops being a game.
+// The ending: when a nation is gone, the simulation stops being a game.
 
 export interface EndingFacts {
-  /** Flight tag, e.g. 'MM-III #1' */
-  tag: string;
-  /** Where the first warhead fell */
-  target: string;
-  /** Side that was struck */
-  defender: string;
-  /** Seconds of warning the defender had before the first impact (null: none) */
-  warning: number | null;
-  /** Sensor that gave the first warning */
-  warnedBy: string | null;
+  /** The story, one line each ('' for a pause) */
+  lines: string[];
+  /** The last, large line: YOU WIN / YOU LOSE / NOBODY WINS */
+  verdict: string;
 }
 
 const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
-function lines(f: EndingFacts): string[] {
-  const out = [`DETONATION CONFIRMED — ${f.target.toUpperCase()}`];
-  if (f.warning !== null && f.warnedBy) {
-    const min = Math.floor(f.warning / 60);
-    out.push(
-      `${f.defender} EARLY WARNING (${f.warnedBy.toUpperCase()}) SAW ${f.tag} ${min} MINUTES BEFORE IMPACT.`,
-      'THAT WAS ENOUGH TIME TO ANSWER.',
-      'THEIR MISSILES ARE ALREADY IN THE AIR.',
-    );
-  } else {
-    out.push('NO WARNING WAS GIVEN. THE ANSWER WILL COME ANYWAY —', 'FROM THE SEA, FROM THE AIR, FROM WHATEVER SURVIVES.');
-  }
-  out.push('', 'EVERY SIMULATION OF THIS WAR ENDS THE SAME WAY.', 'THERE IS NO WINNER.');
-  return out;
-}
+const lines = (f: EndingFacts) => [...f.lines, '', f.verdict];
 
 /**
  * White flash, then the ending text typed out line by line. `onContinue`
  * returns to the paused simulation; `onRestart` reloads the game.
  */
-export function playEnding(facts: EndingFacts, onContinue: () => void, onRestart: () => void) {
+export function playEnding(facts: EndingFacts, onContinue: () => void, onRestart: () => void, textDelayMs = 1400) {
   const flash = document.getElementById('flash')!;
   const ending = document.getElementById('ending')!;
   const text = document.getElementById('endingText')!;
@@ -77,7 +57,7 @@ export function playEnding(facts: EndingFacts, onContinue: () => void, onRestart
       type();
     };
     nextLine();
-  }, 1400);
+  }, textDelayMs);
 
   (document.getElementById('endingContinue') as HTMLButtonElement).onclick = () => {
     ending.hidden = true;

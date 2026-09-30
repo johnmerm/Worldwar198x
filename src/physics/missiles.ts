@@ -86,6 +86,8 @@ export interface MissileSpec {
   guidanceSigma: number;
   /** Published circular error probable, for display [m] */
   cep: number;
+  /** Yield of each RV [kt] */
+  yieldKt: number;
   /** Maximum range this model's guidance achieves (min-energy, single RV) [km] */
   rangeKm: number;
 }
@@ -116,6 +118,7 @@ export const MINUTEMAN_III: MissileSpec = {
   stage1EndPitch: 65,
   guidanceSigma: 0.07,
   cep: 200,
+  yieldKt: 335, // Mk12A / W78
   rangeKm: 11000, // published: ~13,000 km
 };
 
@@ -143,6 +146,7 @@ export const R36M: MissileSpec = {
   stage1EndPitch: 65,
   guidanceSigma: 0.1,
   cep: 400,
+  yieldKt: 550, // 15F173 (SS-18 Mod 4)
   rangeKm: 11000, // published: 11,000-16,000 km depending on payload
 };
 
@@ -170,6 +174,7 @@ export const MINUTEMAN_II: MissileSpec = {
   stage1EndPitch: 55,
   guidanceSigma: 0.12,
   cep: 370,
+  yieldKt: 1200, // Mk11C / W56
   rangeKm: 12000, // published: 11,300 km
 };
 
@@ -193,6 +198,7 @@ export const TITAN_II: MissileSpec = {
   stage1EndPitch: 65,
   guidanceSigma: 0.45,
   cep: 1300,
+  yieldKt: 9000, // Mk6 / W53
   rangeKm: 13000, // published: 15,000 km
 };
 
@@ -217,6 +223,7 @@ export const PEACEKEEPER: MissileSpec = {
   stage1EndPitch: 65,
   guidanceSigma: 0.04,
   cep: 100,
+  yieldKt: 300, // Mk21 / W87
   rangeKm: 10000, // published: 9,600 km
 };
 
@@ -240,6 +247,7 @@ export const UR100N: MissileSpec = {
   stage1EndPitch: 75,
   guidanceSigma: 0.1,
   cep: 350,
+  yieldKt: 550, // SS-19 Mod 3
   rangeKm: 10000,
 };
 
@@ -263,6 +271,7 @@ export const MR_UR100: MissileSpec = {
   stage1EndPitch: 75,
   guidanceSigma: 0.19,
   cep: 420,
+  yieldKt: 750, // SS-17 Mod 3
   rangeKm: 10000,
 };
 
@@ -286,6 +295,7 @@ export const UR100: MissileSpec = {
   stage1EndPitch: 65,
   guidanceSigma: 0.35,
   cep: 1100,
+  yieldKt: 1100, // SS-11 Mod 1
   rangeKm: 10300, // published: 10,600 km
 };
 

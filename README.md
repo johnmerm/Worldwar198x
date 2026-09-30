@@ -16,7 +16,7 @@ MIRV bus and each warhead fly on a CesiumJS globe.
 > dialogue, music or other material from the film is used. The art, text and
 > sound are original, and the film is referenced only as an inspiration.
 
-<!-- play-link -->**[▶ Play build 6](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b6/index.html)**<!-- /play-link -->
+<!-- play-link -->**[▶ Play build 7](https://raw.githack.com/johnmerm/Worldwar198x/claude/anime-war-game-icbm-rjekr1/site/b7/index.html)**<!-- /play-link -->
 
 ## Running
 
@@ -53,6 +53,46 @@ that ships with Cesium.
    - **Depressed** flies lower and faster; radar sees it later, but it uses more energy and is less accurate.
 5. **Compute firing solution**, then **Launch**. Use time warp to follow the ~30-minute flight.
    **Camera → Target area** frames the warheads coming down.
+
+## Two players (`src/net`, `src/game/intel.ts`)
+
+1. Player 1 picks a side in the main page and clicks **Open player 2**. A popup opens for the other side.
+   - The sides lock once player 2 is connected.
+2. Each player plans and launches in their own window and sees their own missiles in full.
+3. Only world events and sensor reports cross between the windows:
+   - Of the enemy's missiles you see only what **your** satellites and radars report, as it happens:
+     - IR launch detections, with an approximate launch point;
+     - radar tracks with anonymous numbers (`R1-T07`), shown as UNKNOWN until drag sorts RVs from decoys;
+     - track loss.
+   - Weapon type, launch site, targets and MIRV events are never sent. You work out origin and destination from the tracks.
+   - Detonations are world events, so both players see them.
+4. **Sensor coverage** shows only your own radars and satellites.
+5. Time warp is shared: either player can change it. The first detonation stops the clock for both players.
+
+The windows talk over a `BroadcastChannel` named after the game id in the URL, so both must be in the same browser. The world clock is computed from the wall clock, so it keeps running when a window is hidden.
+
+## Massive strike (`src/game/salvo.ts`)
+
+- **Hand-picked:** solve a fire mission as usual, then click **Add to salvo** instead of **Launch**. Repeat for each missile.
+- **By strategy:** set a number of missiles, choose a strategy and click **Assign**.
+  - **Random** picks a random field and a weapon actually based there, then a random enemy target in range.
+  - Further MIRV warheads go to targets within 800 km of the first one.
+- **Launch salvo** ripple-fires every missile one second apart. The other player can answer in kind.
+
+Solving and flying run in background workers (`src/game/fireControl.ts`), so a large salvo doesn't freeze the globe.
+
+## Damage and the end of the war (`src/game/damage.ts`, `src/game/outcome.ts`)
+
+- Every warhead paints its damage on the ground: a deep-red zone of flattened buildings and fires, inside a lighter light-damage ring. Radii scale with yield (Glasstone & Dolan).
+- The **Population surviving** bars show both nations, computed the same way in both windows from every detonation:
+  - deaths in ~40 major 1980s cities;
+  - fallout, fire and collapse that grow with the megatons on a nation's soil. At 100 Mt, a game-scale figure, the nation is gone.
+  - The hatched part of each bar won't survive the year. Smoke from burning cities brings a nuclear winter (TTAPS, 1983) that falls on **both** sides, whoever fired.
+- From orbit the planet turns red: fires, dying countries, a global haze and a reddening atmosphere. **Camera → Orbit** looks down on it.
+- The war ends when a nation reaches zero:
+  - The game warps to 120× and waits 30 minutes of game time for the missiles already in the air.
+  - If the other nation also falls in that time, the verdict is **NOBODY WINS**. Otherwise it is **YOU WIN** or **YOU LOSE**.
+  - Even the winner's screen shows the winter to come.
 
 ## Presentation and ending (`src/ui`)
 

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="./assets/index-BWfZwU-1.js"></script>
+    <script type="module" crossorigin src="./assets/index-DDOhkNS0.js"></script>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Cesium.js"></script>
   </head>
   <body>
@@ -22,10 +22,14 @@
       </header>
 
       <section>
-        <h2>Command authority</h2>
+        <h2>Command authority <span id="playerTag" class="count"></span></h2>
         <div class="seg" id="sideSeg">
           <button data-side="USA" class="active">USA · SAC</button>
           <button data-side="USSR">USSR · RVSN</button>
+        </div>
+        <div class="row">
+          <span id="peerStatus" class="coord"></span>
+          <button id="openP2" class="small">Open player 2</button>
         </div>
       </section>
 
@@ -60,7 +64,27 @@
         <h2>Firing solution</h2>
         <dl id="solution"></dl>
         <table id="rvTable"></table>
+        <div class="row">
+          <button id="addToSalvo" class="small">Add to salvo</button>
+        </div>
         <button id="launchBtn" class="danger">Launch</button>
+      </section>
+
+      <section>
+        <h2>Massive strike <span id="salvoCount" class="count"></span></h2>
+        <div class="row">
+          <label class="inline">Missiles <input id="salvoN" type="number" min="1" max="50" value="10" /></label>
+          <select id="salvoStrategy" title="How origins and targets are assigned">
+            <option value="random">Random</option>
+          </select>
+          <button id="salvoGen" class="small">Assign</button>
+        </div>
+        <ol id="salvoList" class="salvo"></ol>
+        <div id="salvoStatus" class="coord"></div>
+        <div class="row">
+          <button id="salvoClear" class="small">Clear</button>
+          <button id="salvoLaunch" class="danger">Launch salvo</button>
+        </div>
       </section>
 
       <section>
@@ -70,12 +94,8 @@
 
       <section>
         <h2>Display</h2>
-        <div class="seg" id="pictureSeg">
-          <button data-picture="truth">Ground truth</button>
-          <button data-picture="sensors">Enemy sensors</button>
-        </div>
         <div class="row">
-          <div id="legend" class="legend" hidden>
+          <div id="legend" class="legend" title="Radar tracks of incoming objects, as classified by your sensors">
             <span style="--c: #ffe066">UNKNOWN</span><span style="--c: #ff4b4b">RV</span
             ><span style="--c: #8a9a93">DECOY</span><span style="--c: #5fd7ff">CHAFF</span>
           </div>
@@ -89,7 +109,13 @@
           <button data-view="globe">Globe</button>
           <button data-view="launch">Launch site</button>
           <button data-view="targets">Target area</button>
+          <button data-view="orbit">Orbit</button>
         </div>
+      </section>
+
+      <section>
+        <h2>Early warning</h2>
+        <dl id="threat"><dt>No contacts</dt></dl>
       </section>
 
       <section>
@@ -102,6 +128,21 @@
         <ol id="log"></ol>
       </section>
     </aside>
+
+    <div id="health" aria-label="Population surviving">
+      <div class="health-title">POPULATION SURVIVING</div>
+      <div class="nation" data-side="USA">
+        <div class="nation-head"><span class="name">USA</span><span class="pct"></span></div>
+        <div class="bar"><div class="now"></div><div class="proj"></div></div>
+        <div class="note"></div>
+      </div>
+      <div class="nation" data-side="USSR">
+        <div class="nation-head"><span class="name">USSR</span><span class="pct"></span></div>
+        <div class="bar"><div class="now"></div><div class="proj"></div></div>
+        <div class="note"></div>
+      </div>
+      <div id="winter" class="note"></div>
+    </div>
 
     <div id="banner" class="banner" hidden></div>
     <div id="crt" aria-hidden="true"></div>

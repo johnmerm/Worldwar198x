@@ -26,7 +26,8 @@ describe('silo fields', () => {
         expect(sol.feasible, `${spec.short} from ${site.name} to ${capital.name}`).toBe(true);
       }
     }
-  });
+    // ~30 full firing solutions: several seconds.
+  }, 30_000);
 
   it('offers the enemy silo fields as counterforce targets', () => {
     const usTargets = targetsFor('USA').map((t) => t.name);

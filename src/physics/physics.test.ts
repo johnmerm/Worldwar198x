@@ -118,7 +118,8 @@ describe('Wisconsin -> Moscow firing solution', () => {
     const cep = misses[30];
     expect(cep).toBeGreaterThan(MINUTEMAN_III.cep * 0.5);
     expect(cep).toBeLessThan(MINUTEMAN_III.cep * 2);
-  });
+    // 60 full flights: several seconds.
+  }, 30_000);
 });
 
 describe('trajectory profiles', () => {

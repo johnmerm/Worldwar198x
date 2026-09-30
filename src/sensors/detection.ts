@@ -35,6 +35,8 @@ export interface SensorEvent {
   kind: 'ir-launch' | 'radar-contact' | 'rv-identified' | 'decoy-identified';
   text: string;
   objectId?: string;
+  /** Where an IR detection places the launch */
+  at?: Vec3;
 }
 
 export interface SensorReport {
@@ -172,6 +174,7 @@ export function evaluateSensors(sim: SimResult, spec: MissileSpec, launchUnixMs:
           sensor: sat.name,
           kind: 'ir-launch',
           text: `IR launch detection near ${fmtLatLon(sim.booster[0].ecef)}`,
+          at: sim.booster[0].ecef,
         });
         firstIr = firstIr === null ? s.t : Math.min(firstIr, s.t);
         break;

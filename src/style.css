@@ -350,8 +350,11 @@ dd.hot {
   color: var(--c);
   margin-right: 3px;
 }
-#pictureSeg {
-  margin-bottom: 4px;
+#peerStatus {
+  color: var(--amber);
+}
+#peerStatus.online {
+  color: var(--fg);
 }
 
 /* ===== 80s anime presentation =============================================== */
@@ -469,7 +472,9 @@ header {
   align-items: center;
   gap: 24px;
   padding: 16px;
-  background: radial-gradient(ellipse at center, rgba(20, 0, 0, 0.92), rgba(0, 0, 0, 0.97));
+  /* Light in the middle: the red planet stays visible behind the text. */
+  background: radial-gradient(ellipse at center, rgba(20, 0, 0, 0.55), rgba(0, 0, 0, 0.9) 75%);
+  text-shadow: 0 0 6px #000, 0 0 12px #000;
   text-align: center;
 }
 #ending[hidden] {
@@ -649,4 +654,127 @@ header {
   .title-start {
     animation: none;
   }
+}
+
+/* ===== Population surviving (both nations) ================================= */
+
+#health {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 300px;
+  z-index: 5;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+.health-title {
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+.nation + .nation {
+  margin-top: 8px;
+}
+.nation-head {
+  display: flex;
+  justify-content: space-between;
+}
+.nation.mine .name::after {
+  content: ' · YOU';
+  color: var(--amber);
+}
+.nation .bar {
+  position: relative;
+  height: 10px;
+  margin: 3px 0 2px;
+  background: rgba(255, 75, 75, 0.25);
+  border: 1px solid rgba(255, 75, 75, 0.5);
+}
+.nation .bar div {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  transition: width 0.8s ease-out;
+}
+/* Alive now; the hatched part will not survive the year. */
+.nation .now {
+  background: repeating-linear-gradient(-45deg, var(--amber) 0 3px, transparent 3px 6px);
+}
+.nation .proj {
+  background: var(--fg);
+}
+.nation.low .proj {
+  background: var(--red);
+}
+.nation .note,
+#winter {
+  color: var(--dim);
+  min-height: 1em;
+}
+#winter {
+  margin-top: 6px;
+  color: var(--amber);
+}
+@media (max-width: 720px) {
+  #health {
+    width: calc(100% - 16px);
+    box-sizing: border-box;
+  }
+}
+
+/* ===== Massive strike ======================================================= */
+
+label.inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}
+#salvoN {
+  width: 52px;
+  background: #02100a;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  font: inherit;
+  padding: 3px 4px;
+}
+#salvoStrategy {
+  width: auto;
+  flex: 1;
+  margin-top: 0;
+}
+ol.salvo {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+ol.salvo li {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px dotted var(--line);
+}
+ol.salvo .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+ol.salvo button {
+  background: none;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  font: inherit;
+}
+#salvoLaunch {
+  flex: 1;
 }
