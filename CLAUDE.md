@@ -8,7 +8,7 @@ renderer-independent and unit-tested); the Cesium UI is `src/main.ts`.
 
 - `main` is the primary branch; `npm run release` on it bumps the build (7, 8, ...).
 - `claude/anime-war-game-icbm-rjekr1` is the original development branch (build 6).
-- `claude/anime-war-game-slbm-bombers-wip` holds unfinished work on sub-builds (6-1, ...).
+- `subs-and-planes` holds unfinished submarine / bomber work on sub-builds (6-1, 6-2, ...).
 
 ## Checks
 
